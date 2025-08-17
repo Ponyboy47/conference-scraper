@@ -1,0 +1,14 @@
+[project]
+name = "conference-scraper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.13.4",
+    "html5lib>=1.1",
+    "pandas>=2.3.1",
+    "pypdf2>=3.0.1",
+    "requests>=2.32.4",
+    "tqdm>=4.67.1",
+]
