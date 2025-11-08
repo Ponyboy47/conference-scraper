@@ -90,7 +90,11 @@ def scrape_talk_data(url):
             return {}
 
         title_tag = soup.find("h1", {"id": "title1"})
-        title = title_tag.text.strip() if title_tag else "No Title Found"
+        if title_tag:
+            title = title_tag.text.strip()
+        else:
+            title_tag = soup.find("title")
+            title = title_tag.text.strip() if title_tag else "No Title Found"
 
         conference_tag = soup.find("p", {"class": "subtitle"})
         # conference = (
