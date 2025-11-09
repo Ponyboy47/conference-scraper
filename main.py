@@ -96,6 +96,18 @@ def scrape_talk_data(url):
             title_tag = soup.find("title")
             title = title_tag.text.strip() if title_tag else "No Title Found"
 
+        # Don't include full sessions, sustainings, reports, etc
+        prefixes = [
+            "Church Auditing Department Report",
+            "Statistical Report",
+            "Audit Report",
+            "The Annual Report of the Church",
+            "Church Finance Committee Report",
+            "The Sustaining of Church Officers"
+        ]
+        if any(map(lambda prefix: title.startswith(prefix), prefixes)) or title.endswith("Session"):
+            return {}
+
         conference_tag = soup.find("p", {"class": "subtitle"})
         # conference = (
         #     conference_tag.text.strip() if conference_tag else "No Conference Found"
@@ -117,17 +129,6 @@ def scrape_talk_data(url):
             else "No Content Found"
         )
 
-        footnotes = (
-            "\n".join(
-                f"{idx}. {note.text.strip()}"
-                for idx, note in enumerate(
-                    soup.find_all("li", {"class": "study-note"}), start=1
-                )
-            )
-            if soup.find_all("li", {"class": "study-note"})
-            else "No Footnotes Found"
-        )
-
         year = re.search(r"/(\d{4})/", url).group(1)
         season = "April" if "/04/" in url else "October"
 
@@ -139,7 +140,6 @@ def scrape_talk_data(url):
             "season": season,
             "url": url,
             "talk": content,
-            "footnotes": footnotes,
         }
     except Exception as e:
         print(f"Failed to scrape {url}: {e}")
