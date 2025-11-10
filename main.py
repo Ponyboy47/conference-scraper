@@ -168,9 +168,10 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         cur.execute("CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
         cur.execute("CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, organization INTEGER UNIQUE NOT NULL, rank INTEGER NOT NULL)")
         cur.execute("CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE NOT NULL, season TEXT UNIQUE NOT NULL)")
-        cur.execute("CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus BOOL NOT NULL DEFAULT FALSE, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL")
+        cur.execute("CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL")
         cur.execute("CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)")
         cur.execute("CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')))")
+        cur.execute("CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, name TEXT UNIQUE NOT NULL)")
 
     return con, cur
 
@@ -282,11 +283,12 @@ def main_scrape_process():
         conference_df[col] = conference_df[col].apply(
             lambda x: x.replace("\t", "") if isinstance(x, str) else x
         )
+    conference_df.sort(["year", "season", "url", "speaker", "title"], ascending=[True, True, True, True, True], inplace=True)
 
     save_sql(conference_df)
 
     # Save to JSON and sqlite db
-    conference_df.to_json("conference_talks.json", orient="records", indent=4)
+    conference_df.to_json("conference_talks.json", orient="records", indent=2, sort_keys=True)
     print("Scraping complete. Data saved to 'conference_talks.json'.")
 
 
