@@ -15,6 +15,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |talks|Messages delivered at General Conference|
 |talk_texts|The textual content of a conference talk|
 |talk_urls|URLs linking a talk to an audio, visual, or textual representation|
+|talk_topics|Topics included in the message of a given talk|
 
 ### Tables
 
@@ -50,7 +51,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |column|type|description|
 |id|integer|Primary key|
 |title|text|The speaker's designated name for their conference remarks|
-|emeritus|bool|Whether or not the speaker was technically released at the time of giving the talk|
+|emeritus|integer|Whether or not the speaker was technically released at the time of giving the talk (0 if false, anything else == true)|
 |speaker|integer|The speaker foreign key associated with the talk|
 |conference|integer|The conference foreign key associated with the talk|
 |calling|integer|The calling foreign key associated with the speaker at the time of the talk|
@@ -69,6 +70,14 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |talk|integer|The talk foreign key to which this url corresponds|
 |url|text|The actual URL assocated with the talk|
 |kind|text|The type of data expected at the URL (audio, video, or text)|
+
+
+#### Talk Topics
+
+|column|type|description|
+|id|integer|Primary key|
+|talk|integer|The talk foreign key to which this topic corresponds|
+|name|text|The name of the topic|
 
 ## Features
 
