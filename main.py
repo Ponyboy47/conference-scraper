@@ -286,7 +286,7 @@ def main_scrape_process():
         conference_df[col] = conference_df[col].apply(
             lambda x: x.replace("\t", "") if isinstance(x, str) else x
         )
-    conference_df.sort(["year", "season", "url", "speaker", "title"], ascending=[True, True, True, True, True], inplace=True)
+    conference_df.sort_values(["year", "season", "url", "speaker", "title"], ascending=[True, True, True, True, True], inplace=True)
 
     save_sql(conference_df)
 
