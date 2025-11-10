@@ -6,9 +6,13 @@ import unicodedata
 import time
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
+import sqlite3
+import sys
+from pathlib import Path
+import os
 
 
-def get_soup(url):
+def get_soup(url: str) -> BeautifulSoup | None:
     """Create a tree structure (BeautifulSoup) out of a GET request's HTML."""
     try:
         r = requests.get(url, allow_redirects=True)
@@ -20,12 +24,12 @@ def get_soup(url):
         return None
 
 
-def is_decade_page(url):
+def is_decade_page(url: str) -> bool:
     """Check if a page is a decade selection page."""
     return bool(re.search(r"/study/general-conference/\d{4}\d{4}", url))
 
 
-def scrape_conference_pages(main_page_url):
+def scrape_conference_pages(main_page_url: str) -> list[str]:
     """Retrieve a list of URLs for each conference (year/month) from the main page."""
     soup = get_soup(main_page_url)
     if soup is None:
@@ -60,7 +64,7 @@ def scrape_conference_pages(main_page_url):
     return all_conference_links
 
 
-def scrape_talk_urls(conference_url):
+def scrape_talk_urls(conference_url: str) -> list[set]:
     """Retrieve a list of URLs for each talk in a specific conference."""
     soup = get_soup(conference_url)
     if soup is None:
@@ -69,7 +73,7 @@ def scrape_talk_urls(conference_url):
     talk_links = [
         "https://www.churchofjesuschrist.org" + a["href"]
         for a in soup.find_all("a", href=True)
-        if re.search(r"/study/general-conference/\d{4}/(04|10)/.*", a["href"])
+        if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
     ]
 
     # Remove duplicate links and session links
@@ -82,7 +86,7 @@ def scrape_talk_urls(conference_url):
     return talk_links
 
 
-def scrape_talk_data(url):
+def scrape_talk_data(url: str) -> dict[str, str | None]:
     """Scrapes a single talk for data such as: title, conference, calling, speaker, content."""
     try:
         soup = get_soup(url)
@@ -94,7 +98,7 @@ def scrape_talk_data(url):
             title = title_tag.text.strip()
         else:
             title_tag = soup.find("title")
-            title = title_tag.text.strip() if title_tag else "No Title Found"
+            title = title_tag.text.strip() if title_tag else None
 
         # Don't include full sessions, sustainings, reports, etc
         prefixes = [
@@ -103,22 +107,17 @@ def scrape_talk_data(url):
             "Audit Report",
             "The Annual Report of the Church",
             "Church Finance Committee Report",
-            "The Sustaining of Church Officers"
+            "The Sustaining of Church Officers",
+            "The Church Audit Committee Report",
         ]
         if any(map(lambda prefix: title.startswith(prefix), prefixes)) or title.endswith("Session"):
             return {}
 
-        conference_tag = soup.find("p", {"class": "subtitle"})
-        # conference = (
-        #     conference_tag.text.strip() if conference_tag else "No Conference Found"
-        # )
-        # print(f"Conference: {conference}")
-
         author_tag = soup.find("p", {"class": "author-name"})
-        speaker = author_tag.text.strip() if author_tag else "No Speaker Found"
+        speaker = author_tag.text.strip() if author_tag else None
 
         calling_tag = soup.find("p", {"class": "author-role"})
-        calling = calling_tag.text.strip() if calling_tag else "No Calling Found"
+        calling = calling_tag.text.strip() if calling_tag else None
 
         content_array = soup.find("div", {"class": "body-block"})
         content = (
@@ -126,7 +125,7 @@ def scrape_talk_data(url):
                 paragraph.text.strip() for paragraph in content_array.find_all("p")
             )
             if content_array
-            else "No Content Found"
+            else None
         )
 
         year = re.search(r"/(\d{4})/", url).group(1)
@@ -146,10 +145,10 @@ def scrape_talk_data(url):
         return {}
 
 
-def scrape_talk_data_parallel(urls):
+def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
     """Scrapes all talks in parallel using ThreadPoolExecutor."""
     with ThreadPoolExecutor(
-        max_workers=10
+        max_workers=os.cpu_count()
     ) as executor:  # Adjust `max_workers` as needed
         results = list(
             tqdm(
@@ -159,6 +158,104 @@ def scrape_talk_data_parallel(urls):
             )
         )
     return [result for result in results if result]  # Filter out empty results
+
+def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
+    con = sqlite3.connect("conference_talks.db")
+    cur = con.cursor()
+
+    if not Path("conference_talks.db").exists():
+        cur.execute("CREATE TABLE speakers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
+        cur.execute("CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
+        cur.execute("CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, organization INTEGER UNIQUE NOT NULL, rank INTEGER NOT NULL)")
+        cur.execute("CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE NOT NULL, season TEXT UNIQUE NOT NULL)")
+        cur.execute("CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus BOOL NOT NULL DEFAULT FALSE, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL")
+        cur.execute("CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)")
+        cur.execute("CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')))")
+
+    return con, cur
+
+
+class Calling:
+    def __init__(full_calling: str):
+        matches = re.match(r"(?P<emeritus>(recently )?(released|former)( ?(as|member of the) )?) (?P<calling>[a-zA-Z, ]+)", full_calling, re.I)
+        if not matches:
+            raise ValueError(f"Unsupported calling: {full_calling}")
+
+        self.calling = matches.group("calling")
+        self.organization, self.rank = Calling.get_org_and_rank(self.calling)
+        self.emeritus = len(matches.group("emeritus")) > 0
+
+    @staticmethod
+    def get_org(cls, calling: str) -> tuple[str, int]:
+        org = "Local"
+        rank = 99
+        lowered = calling.lower()
+        if "president of the church" in lowered:
+            org = "First Presidency"
+            rank = 0
+        elif "first presidency" in lowered:
+            org = "First Presidency"
+            rank = 1
+        elif "of the twelve" in lowered:
+            org = "Quorum of the Twelve Apostles"
+            rank = 2
+        elif "of the seventy" in lowered:
+            org = "Quorum of the Seventy"
+            rank = 3
+        elif "presiding bishop" in lowered:
+            org = "Presiding Bishopric"
+            rank = 4
+        elif lowered.endswith("general presidency"):
+            if "young men" in lowered:
+                rank = 5
+            elif "sunday school in lowered":
+                rank = 6
+            elif "relief society" in lowered:
+                rank = 7
+            elif "young women" in lowered:
+                rank = 8
+            elif "primary" in lowered:
+                rank = 9
+            else:
+                raise ValueError(f"Unsupported calling for organization: {calling}")
+            org = re.match(r"[a-zA-Z ]+(, | in the )?P<group>[a-zA-Z ]+)", lowered, re.I).group("org").title()
+        elif lowered.endswith("general president"):
+            if "young men" in lowered:
+                org = "Young Men General Presidency"
+                rank = 5
+            elif "sunday school in lowered":
+                org = "Sunday School General Presidency"
+                rank = 6
+            elif "relief society" in lowered:
+                org = "Relief Society General Presidency"
+                rank = 7
+            elif "young women" in lowered:
+                org = "Young Women General Presidency"
+                rank = 8
+            elif "primary" in lowered:
+                org = "Primary General Presidency"
+                rank = 9
+            else:
+                raise ValueError(f"Unsupported calling for organization: {calling}")
+        elif any(map(lambda field: field in lowered, [
+            "church audit committee",
+            "church leadership committee",
+        ])):
+            org = calling.title()
+        return org, rank
+
+def save_sql(conference_df: pd.DataFrame) -> None:
+    con, cur = setup_sql()
+    speakers: set[str] = set()
+    callings: set[Calling] = set()
+    for col in conference_df.columns:
+        element = conference_df[col]
+        speakers.insert(element.speaker)
+        calling = Calling(element.calling)
+        print(element.title)
+    cur.executemany("INSERT INTO speakers (name) VALUES (?)", speakers)
+    con.commit()
+    sys.exit(1)
 
 
 def main_scrape_process():
@@ -186,12 +283,11 @@ def main_scrape_process():
             lambda x: x.replace("\t", "") if isinstance(x, str) else x
         )
 
-    # Save to CSV and JSON
-    conference_df.to_csv("conference_talks.csv", index=False)
-    print("Scraping complete. Data saved to 'conference_talks.csv'.")
+    save_sql(conference_df)
 
+    # Save to JSON and sqlite db
     conference_df.to_json("conference_talks.json", orient="records", indent=4)
-    print("Data also saved to 'conference_talks.json'.")
+    print("Scraping complete. Data saved to 'conference_talks.json'.")
 
 
 def main():
