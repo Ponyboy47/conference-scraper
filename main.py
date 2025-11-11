@@ -210,6 +210,9 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             emeritus INTEGER NOT NULL DEFAULT 0
+            conference INTEGER NOT NULL,
+            UNIQUE(title, conference) ON CONFLICT IGNORE,
+            FOREIGN KEY(conference) REFERENCES conferences
         )
     """)
     cur.execute("""
@@ -219,15 +222,6 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
             speaker INTEGER NOT NULL,
             FOREIGN KEY(talk) REFERENCES talks
             FOREIGN KEY(speaker) REFERENCES speakers
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE talk_conferences(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            talk INTEGER NOT NULL,
-            conference INTEGER NOT NULL,
-            FOREIGN KEY(talk) REFERENCES talks
-            FOREIGN KEY(conference) REFERENCES conferences
         )
     """)
     cur.execute("""
@@ -292,6 +286,9 @@ class Calling:
         self.calling = matches.group("calling").strip()
         self.organization, self.rank = Calling.get_org_and_rank(self.calling)
         self.emeritus = len(matches.group("emeritus").strip()) > 0
+
+    def __bool__(self) -> bool:
+        return self.rank < 1000
 
     @staticmethod
     def get_org_and_rank(calling: str) -> tuple[str, int]:
@@ -374,46 +371,57 @@ speaker_re = re.compile(
     r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][a-zA-Z,.\s-]+)$",
     flags=re.I,
 )
+def _get_speaker(full_speaker: str | None) -> str | None:
+    if not full_speaker:
+        return None
+
+    speaker = full_speaker.strip()
+    match = speaker_re.search(speaker)
+    if match:
+        speaker = match.group("speaker").strip()
+    return speaker
 
 
 def save_sql(
     con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame
 ) -> None:
-    speakers: set[tuple[str]] = set()
-    orgs: set[tuple[str]] = set()
+    speakers: list[tuple[str]] = []
+    orgs: list[tuple[str]] = []
     conferences: set[Conference] = set()
-    talks: set[tuple[str]] = set()
+    talks: list[tuple[str, int]] = []
     for idx, row in conference_df.iterrows():
-        if not row.speaker:
+        speaker = _get_speaker(row.speaker)
+        if not speaker:
             print("Talk has no speaker:", row.title, row.year, row.season)
-        else:
-            speaker = row.speaker.strip()
-            match = speaker_re.search(speaker)
-            if match:
-                speaker = match.group("speaker").strip()
-            speakers.add((speaker,))
+        speakers.append(speaker)
 
-        emeritus = False
-        if not row.calling:
+        calling = Calling(row.calling)
+        if not calling:
             print("Talk has no calling:", row.title, row.year, row.season)
-        else:
-            calling = Calling(row.calling)
-            emeritus = calling.emeritus
-            orgs.add((calling.organization,))
+        orgs.append(calling.organization)
 
-        conferences.add(Conference(row.year, row.season))
-        talks.add((row.title, 1 if emeritus else 0))
+        conferences.set(Conference(row.year, row.season))
+        talks.append((row.title, 1 if calling.emeritus else 0))
+
     cur.executemany(
         "INSERT INTO conferences (year, season) VALUES (:year, :season)",
         map(lambda c: c.__dict__, conferences),
     )
-    cur.executemany("INSERT INTO speakers (name) VALUES (?)", speakers)
-    cur.executemany("INSERT INTO organizations (name) VALUES (?)", orgs)
-    cur.executemany("INSERT INTO talks (title, emeritus) VALUES (?, ?)", talks)
+    cur.executemany("INSERT INTO speakers (name) VALUES (?)", map(lambda v: (v,), set(speakers)))
+    cur.executemany("INSERT INTO organizations (name) VALUES (?)", map(lambda v: (v,), set(orgs)))
     con.commit()
 
     # Now that the easy things are inserted, query for foreign key IDs
-    # for idx, row in conference_df.iterrows():
+    for idx, row in conference_df.iterrows():
+        talk, emeritus = talks[idx]
+
+        conf = cur.execute("SELECT id FROM conferences WHERE (year = ?, season = ?)", row.year, row.season).fetchone()[0]
+        val = cur.execute("INSERT INTO talks (title, emeritus, conference) VALUES (?, ?, ?)", talk, emeritus, conf)
+        print(val)
+
+        calling = callings[idx]
+        speaker = speakers[idx]
+
 
 
 def main_scrape_process():
