@@ -110,6 +110,10 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "Church Finance Committee Report",
             "The Sustaining of Church Officers",
             "The Church Audit Committee Report",
+            "Sustaining of ",
+            "Video:",
+            "Saturday Morning",
+            "Proclamation",
         ]
         if any(
             map(lambda prefix: title.startswith(prefix), prefixes)
@@ -178,31 +182,32 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         "CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)"
     )
     cur.execute(
-        "CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, organization INTEGER UNIQUE NOT NULL, rank INTEGER NOT NULL)"
+        "CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, organization INTEGER NOT NULL, rank INTEGER NOT NULL, UNIQUE(name, organization) ON CONFLICT IGNORE)"
     )
     cur.execute(
-        "CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE NOT NULL, season TEXT UNIQUE NOT NULL)"
+        "CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year NOT NULL, season TEXT NOT NULL, UNIQUE(year, season) ON CONFLICT IGNORE)"
     )
     cur.execute(
-        "CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL)"
+        "CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL, UNIQUE(title, conference, speaker) ON CONFLICT IGNORE)"
     )
     cur.execute(
         "CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)"
     )
     cur.execute(
-        "CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')))"
+        "CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')), UNIQUE(talk, url) ON CONFLICT IGNORE)"
     )
     cur.execute(
-        "CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, name TEXT UNIQUE NOT NULL)"
+        "CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER NOT NULL, name TEXT NOT NULL, UNIQUE(talk, name) ON CONFLICT IGNORE)"
     )
 
     return con, cur
 
 
 calling_re = re.compile(
-    r"(?P<emeritus>(recently )?((released|former) )?((as|member of the) )?)(?P<calling>[a-zA-Z, ]+)"
+    r"(?P<emeritus>(recently\s)?((released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[a-zA-Z,\s()0-9-]+)$",
+    flags=re.I,
 )
-org_re = re.compile(r"[a-zA-Z ]+(, | in the )(?P<group>[a-zA-Z ]+)")
+org_re = re.compile(r"[a-zA-Z\s]+(,\s|\sin\sthe\s)(?P<org>[a-zA-Z\s-]+)$", flags=re.I)
 
 
 class Calling:
@@ -214,13 +219,13 @@ class Calling:
             self.emeritus = False
             return
 
-        matches = calling_re.match(full_calling, re.I)
+        matches = calling_re.search(full_calling)
         if not matches:
             raise ValueError(f"Unsupported calling: {full_calling}")
 
-        self.calling = matches.group("calling")
+        self.calling = matches.group("calling").strip()
         self.organization, self.rank = Calling.get_org_and_rank(self.calling)
-        self.emeritus = len(matches.group("emeritus")) > 0
+        self.emeritus = len(matches.group("emeritus").strip()) > 0
 
     @staticmethod
     def get_org_and_rank(calling: str) -> tuple[str, int]:
@@ -255,7 +260,7 @@ class Calling:
                 rank = 9
             else:
                 raise ValueError(f"Unsupported calling for organization: {calling}")
-            org = org_re.match(lowered, re.I).group("org").title()
+            org = org_re.search(lowered).group("org").strip().title()
         elif lowered.endswith("general president"):
             if "young men" in lowered:
                 org = "Young Men General Presidency"
@@ -299,20 +304,38 @@ class Conference:
         return self.year == other.year and self.season == other.season
 
 
+speaker_re = re.compile(
+    r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][a-zA-Z,.\s-]+)$",
+    flags=re.I,
+)
+
+
 def save_sql(conference_df: pd.DataFrame) -> None:
     con, cur = setup_sql()
     speakers: set[str] = set()
     orgs: set[str] = set()
     conferences: set[Conference] = set()
     for idx, row in conference_df.iterrows():
-        speakers.add(row.speaker)
-        calling = Calling(row.calling)
-        orgs.add(calling.organization)
+        if not row.speaker:
+            print("Talk has no speaker:", row.title, row.year, row.season)
+        else:
+            speaker = row.speaker.strip()
+            match = speaker_re.search(speaker)
+            if match:
+                speaker = match.group("speaker").strip()
+            speakers.add(speaker)
+
+        if not row.calling:
+            print("Talk has no calling:", row.title, row.year, row.season)
+        else:
+            calling = Calling(row.calling)
+            orgs.add(calling.organization)
+
         conferences.add(Conference(row.year, row.season))
-    cur.executemany("INSERT INTO speakers (name) VALUES (?)", speakers)
     cur.executemany(
-        "INSERT INTO conferences (year, season) VALUES (:year, :season)", conferences
+        "INSERT INTO conferences (year, season) VALUES (:year, :season)", map(lambda c: c.__dict__, conferences)
     )
+    cur.executemany("INSERT INTO speakers (name) VALUES (?)", map(lambda s: (s,), speakers))
     con.commit()
     sys.exit(1)
 
@@ -336,10 +359,11 @@ def main_scrape_process():
     # Normalize Unicode and clean data
     for col in conference_df.columns:
         conference_df[col] = conference_df[col].apply(
-            lambda x: unicodedata.normalize("NFD", x) if isinstance(x, str) else x
-        )
-        conference_df[col] = conference_df[col].apply(
-            lambda x: x.replace("\t", "") if isinstance(x, str) else x
+            lambda x: unicodedata.normalize("NFD", x)
+            .replace("\t", "")
+            .replace("\xa0", " ")
+            if isinstance(x, str)
+            else x
         )
     conference_df.sort_values(
         ["year", "season", "url", "speaker", "title"],
