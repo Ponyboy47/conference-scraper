@@ -55,6 +55,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |id|integer|Primary key|
 |title|text|The speaker's designated name for their conference remarks|
 |emeritus|integer|Whether or not the speaker was technically released at the time of giving the talk (0 if false, anything else == true)|
+|conference|integer|The conference foreign key associated with the talk|
 
 #### Talk Speakers
 
@@ -62,13 +63,6 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this text corresponds|
 |speaker|integer|The speaker foreign key associated with the talk|
-
-#### Talk Conferences
-
-|column|type|description|
-|id|integer|Primary key|
-|talk|integer|The talk foreign key to which this text corresponds|
-|conference|integer|The conference foreign key associated with the talk|
 
 #### Talk Callings
 
