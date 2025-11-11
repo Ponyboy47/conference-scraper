@@ -209,7 +209,7 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         CREATE TABLE talks(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
-            emeritus INTEGER NOT NULL DEFAULT 0
+            emeritus INTEGER NOT NULL DEFAULT 0,
             conference INTEGER NOT NULL,
             UNIQUE(title, conference) ON CONFLICT IGNORE,
             FOREIGN KEY(conference) REFERENCES conferences
