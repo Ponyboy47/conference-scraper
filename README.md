@@ -13,6 +13,9 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |callings|Callings from conference speakers|
 |conferences|Year and season of General Conferences|
 |talks|Messages delivered at General Conference|
+|talk_speakers|The speaker who delivered a conference talk|
+|talk_conferences|The conference when a talk was delivered|
+|talk_callings|The calling of the speaker at the time of a conference talk|
 |talk_texts|The textual content of a conference talk|
 |talk_urls|URLs linking a talk to an audio, visual, or textual representation|
 |talk_topics|Topics included in the message of a given talk|
@@ -52,8 +55,26 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |id|integer|Primary key|
 |title|text|The speaker's designated name for their conference remarks|
 |emeritus|integer|Whether or not the speaker was technically released at the time of giving the talk (0 if false, anything else == true)|
+
+#### Talk Speakers
+
+|column|type|description|
+|id|integer|Primary key|
+|talk|integer|The talk foreign key to which this text corresponds|
 |speaker|integer|The speaker foreign key associated with the talk|
+
+#### Talk Conferences
+
+|column|type|description|
+|id|integer|Primary key|
+|talk|integer|The talk foreign key to which this text corresponds|
 |conference|integer|The conference foreign key associated with the talk|
+
+#### Talk Callings
+
+|column|type|description|
+|id|integer|Primary key|
+|talk|integer|The talk foreign key to which this text corresponds|
 |calling|integer|The calling foreign key associated with the speaker at the time of the talk|
 
 #### Talk Texts

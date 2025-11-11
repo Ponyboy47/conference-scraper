@@ -182,7 +182,7 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         )
     """)
     cur.execute("""
-        CREATE TABLE organization(
+        CREATE TABLE organizations(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL
         )
@@ -193,7 +193,8 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
             name TEXT NOT NULL,
             organization INTEGER NOT NULL,
             rank INTEGER NOT NULL,
-            UNIQUE(name, organization) ON CONFLICT IGNORE
+            UNIQUE(name, organization) ON CONFLICT IGNORE,
+            FOREIGN KEY(organization) REFERENCES organizations
         )
     """)
     cur.execute("""
@@ -208,11 +209,34 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         CREATE TABLE talks(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
-            emeritus INTEGER NOT NULL DEFAULT 0,
+            emeritus INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talk_speakers(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER NOT NULL,
             speaker INTEGER NOT NULL,
+            FOREIGN KEY(talk) REFERENCES talks
+            FOREIGN KEY(speaker) REFERENCES speakers
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talk_conferences(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER NOT NULL,
             conference INTEGER NOT NULL,
+            FOREIGN KEY(talk) REFERENCES talks
+            FOREIGN KEY(conference) REFERENCES conferences
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talk_callings(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER NOT NULL,
             calling INTEGER NOT NULL,
-            UNIQUE(title, conference, speaker) ON CONFLICT IGNORE
+            FOREIGN KEY(talk) REFERENCES talks
+            FOREIGN KEY(calling) REFERENCES callings
         )
     """)
     cur.execute("""
@@ -229,6 +253,7 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
             url TEXT NOT NULL,
             kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')),
             UNIQUE(talk, url) ON CONFLICT IGNORE
+            FOREIGN KEY(talk) REFERENCES talks
         )
     """)
     cur.execute("""
@@ -237,6 +262,7 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
             talk INTEGER NOT NULL,
             name TEXT NOT NULL,
             UNIQUE(talk, name) ON CONFLICT IGNORE
+            FOREIGN KEY(talk) REFERENCES talks
         )
     """)
 
@@ -350,11 +376,11 @@ speaker_re = re.compile(
 )
 
 
-def save_sql(conference_df: pd.DataFrame) -> None:
-    con, cur = setup_sql()
-    speakers: set[str] = set()
-    orgs: set[str] = set()
+def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame) -> None:
+    speakers: set[tuple[str]] = set()
+    orgs: set[tuple[str]] = set()
     conferences: set[Conference] = set()
+    talks: set[tuple[str]] = set()
     for idx, row in conference_df.iterrows():
         if not row.speaker:
             print("Talk has no speaker:", row.title, row.year, row.season)
@@ -363,27 +389,37 @@ def save_sql(conference_df: pd.DataFrame) -> None:
             match = speaker_re.search(speaker)
             if match:
                 speaker = match.group("speaker").strip()
-            speakers.add(speaker)
+            speakers.add((speaker,))
 
+        emeritus = False
         if not row.calling:
             print("Talk has no calling:", row.title, row.year, row.season)
         else:
             calling = Calling(row.calling)
-            orgs.add(calling.organization)
+            emeritus = calling.emeritus
+            orgs.add((calling.organization,))
 
         conferences.add(Conference(row.year, row.season))
+        talks.add((row.title, 1 if emeritus else 0))
     cur.executemany(
         "INSERT INTO conferences (year, season) VALUES (:year, :season)",
         map(lambda c: c.__dict__, conferences),
     )
-    cur.executemany(
-        "INSERT INTO speakers (name) VALUES (?)", map(lambda s: (s,), speakers)
-    )
+    cur.executemany("INSERT INTO speakers (name) VALUES (?)", speakers)
+    cur.executemany("INSERT INTO organizations (name) VALUES (?)", orgs)
+    cur.executemany("INSERT INTO talks (title, emeritus) VALUES (?, ?)", talks)
     con.commit()
+
+    # Now that the easy things are inserted, query for foreign key IDs
+
     sys.exit(1)
 
 
 def main_scrape_process():
+    # Doing this first to make the feedback loop for SQL schema changes faster
+    con, cur = setup_sql()
+    print("Configured SQLite db file")
+
     main_url = "https://www.churchofjesuschrist.org/study/general-conference?lang=eng"
     conference_urls = scrape_conference_pages(main_url)
 
@@ -414,7 +450,7 @@ def main_scrape_process():
         inplace=True,
     )
 
-    save_sql(conference_df)
+    save_sql(con, cur, conference_df)
 
     # Save to JSON and sqlite db
     conference_df.to_json(
