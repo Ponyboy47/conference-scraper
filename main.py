@@ -376,7 +376,9 @@ speaker_re = re.compile(
 )
 
 
-def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame) -> None:
+def save_sql(
+    con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame
+) -> None:
     speakers: set[tuple[str]] = set()
     orgs: set[tuple[str]] = set()
     conferences: set[Conference] = set()
