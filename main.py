@@ -7,10 +7,10 @@ import time
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import sqlite3
-import sys
 from pathlib import Path
 import os
 from dataclasses import dataclass
+import json
 
 
 def get_soup(url: str) -> BeautifulSoup | None:
@@ -413,8 +413,7 @@ def save_sql(
     con.commit()
 
     # Now that the easy things are inserted, query for foreign key IDs
-
-    sys.exit(1)
+    # for idx, row in conference_df.iterrows():
 
 
 def main_scrape_process():
@@ -441,7 +440,7 @@ def main_scrape_process():
     for col in conference_df.columns:
         conference_df[col] = conference_df[col].apply(
             lambda x: unicodedata.normalize("NFD", x)
-            .replace("\t", "")
+            .replace("\t", "    ")
             .replace("\xa0", " ")
             if isinstance(x, str)
             else x
@@ -451,14 +450,16 @@ def main_scrape_process():
         ascending=[True, True, True, True, True],
         inplace=True,
     )
-
-    save_sql(con, cur, conference_df)
+    print("Scraping complete")
 
     # Save to JSON and sqlite db
-    conference_df.to_json(
-        "conference_talks.json", orient="records", indent=2, sort_keys=True
-    )
-    print("Scraping complete. Data saved to 'conference_talks.json'.")
+    conference_json = conference_df.to_dict(orient="records")
+    with open("conference_talks.json", "w") as f:
+        json.dump(conference_json, f, indent=2, sort_keys=True)
+    print("JSON data saved to 'conference_talks.json'.")
+
+    save_sql(con, cur, conference_df)
+    print("SQLite data saved to 'conference_talks.db'.")
 
 
 def main():
