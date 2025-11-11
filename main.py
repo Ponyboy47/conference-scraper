@@ -10,6 +10,7 @@ import sqlite3
 import sys
 from pathlib import Path
 import os
+from dataclasses import dataclass
 
 
 def get_soup(url: str) -> BeautifulSoup | None:
@@ -160,18 +161,19 @@ def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
     return [result for result in results if result]  # Filter out empty results
 
 def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
-    con = sqlite3.connect("conference_talks.db")
-    cur = con.cursor()
-
     db_path = Path("conference_talks.db")
     if db_path.exists():
         db_path.unlink()
+
+    con = sqlite3.connect(db_path)
+    cur = con.cursor()
+
 
     cur.execute("CREATE TABLE speakers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
     cur.execute("CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
     cur.execute("CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, organization INTEGER UNIQUE NOT NULL, rank INTEGER NOT NULL)")
     cur.execute("CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE NOT NULL, season TEXT UNIQUE NOT NULL)")
-    cur.execute("CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL")
+    cur.execute("CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL)")
     cur.execute("CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)")
     cur.execute("CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')))")
     cur.execute("CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, name TEXT UNIQUE NOT NULL)")
@@ -179,9 +181,18 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     return con, cur
 
 
+calling_re = re.compile(r"(?P<emeritus>(recently )?((released|former) )?((as|member of the) )?)(?P<calling>[a-zA-Z, ]+)")
+org_re = re.compile(r"[a-zA-Z ]+(, | in the )(?P<group>[a-zA-Z ]+)")
 class Calling:
-    def __init__(full_calling: str):
-        matches = re.match(r"(?P<emeritus>(recently )?(released|former)( ?(as|member of the) )?) (?P<calling>[a-zA-Z, ]+)", full_calling, re.I)
+    def __init__(self, full_calling: str | None):
+        if not full_calling:
+            self.calling = "Unknown"
+            self.organization = "Unknown"
+            self.rank = 1000
+            self.emeritus = False
+            return
+
+        matches = calling_re.match(full_calling, re.I)
         if not matches:
             raise ValueError(f"Unsupported calling: {full_calling}")
 
@@ -190,7 +201,7 @@ class Calling:
         self.emeritus = len(matches.group("emeritus")) > 0
 
     @staticmethod
-    def get_org(cls, calling: str) -> tuple[str, int]:
+    def get_org_and_rank(calling: str) -> tuple[str, int]:
         org = "Local"
         rank = 99
         lowered = calling.lower()
@@ -222,7 +233,7 @@ class Calling:
                 rank = 9
             else:
                 raise ValueError(f"Unsupported calling for organization: {calling}")
-            org = re.match(r"[a-zA-Z ]+(, | in the )?P<group>[a-zA-Z ]+)", lowered, re.I).group("org").title()
+            org = org_re.match(lowered, re.I).group("org").title()
         elif lowered.endswith("general president"):
             if "young men" in lowered:
                 org = "Young Men General Presidency"
@@ -248,16 +259,29 @@ class Calling:
             org = calling.title()
         return org, rank
 
+@dataclass
+class Conference:
+    year: int
+    season: str
+
+    def __hash__(self) -> int:
+        return hash((self.year, self.season))
+
+    def __eq__(self, other) -> bool:
+        return self.year == other.year and self.season == other.season
+
 def save_sql(conference_df: pd.DataFrame) -> None:
     con, cur = setup_sql()
     speakers: set[str] = set()
-    callings: set[Calling] = set()
-    for col in conference_df.columns:
-        element = conference_df[col]
-        speakers.insert(element.speaker)
-        calling = Calling(element.calling)
-        print(element.title)
+    orgs: set[str] = set()
+    conferences: set[Conference] = set()
+    for idx, row in conference_df.iterrows():
+        speakers.add(row.speaker)
+        calling = Calling(row.calling)
+        orgs.add(calling.organization)
+        conferences.add(Conference(row.year, row.season))
     cur.executemany("INSERT INTO speakers (name) VALUES (?)", speakers)
+    cur.executemany("INSERT INTO conferences (year, season) VALUES (:year, :season)", conferences)
     con.commit()
     sys.exit(1)
 
