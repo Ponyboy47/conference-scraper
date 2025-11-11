@@ -175,30 +175,70 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     con = sqlite3.connect(db_path)
     cur = con.cursor()
 
-    cur.execute(
-        "CREATE TABLE speakers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)"
-    )
-    cur.execute(
-        "CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)"
-    )
-    cur.execute(
-        "CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, organization INTEGER NOT NULL, rank INTEGER NOT NULL, UNIQUE(name, organization) ON CONFLICT IGNORE)"
-    )
-    cur.execute(
-        "CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year NOT NULL, season TEXT NOT NULL, UNIQUE(year, season) ON CONFLICT IGNORE)"
-    )
-    cur.execute(
-        "CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL, UNIQUE(title, conference, speaker) ON CONFLICT IGNORE)"
-    )
-    cur.execute(
-        "CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)"
-    )
-    cur.execute(
-        "CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')), UNIQUE(talk, url) ON CONFLICT IGNORE)"
-    )
-    cur.execute(
-        "CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER NOT NULL, name TEXT NOT NULL, UNIQUE(talk, name) ON CONFLICT IGNORE)"
-    )
+    cur.execute("""
+        CREATE TABLE speakers(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE organization(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE callings(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            organization INTEGER NOT NULL,
+            rank INTEGER NOT NULL,
+            UNIQUE(name, organization) ON CONFLICT IGNORE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE conferences(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year NOT NULL,
+            season TEXT NOT NULL,
+            UNIQUE(year, season) ON CONFLICT IGNORE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talks(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            emeritus INTEGER NOT NULL DEFAULT 0,
+            speaker INTEGER NOT NULL,
+            conference INTEGER NOT NULL,
+            calling INTEGER NOT NULL,
+            UNIQUE(title, conference, speaker) ON CONFLICT IGNORE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talk_texts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER UNIQUE NOT NULL,
+            text TEXT UNIQUE NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talk_urls(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')),
+            UNIQUE(talk, url) ON CONFLICT IGNORE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE talk_topics(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            UNIQUE(talk, name) ON CONFLICT IGNORE
+        )
+    """)
 
     return con, cur
 
@@ -333,9 +373,12 @@ def save_sql(conference_df: pd.DataFrame) -> None:
 
         conferences.add(Conference(row.year, row.season))
     cur.executemany(
-        "INSERT INTO conferences (year, season) VALUES (:year, :season)", map(lambda c: c.__dict__, conferences)
+        "INSERT INTO conferences (year, season) VALUES (:year, :season)",
+        map(lambda c: c.__dict__, conferences),
     )
-    cur.executemany("INSERT INTO speakers (name) VALUES (?)", map(lambda s: (s,), speakers))
+    cur.executemany(
+        "INSERT INTO speakers (name) VALUES (?)", map(lambda s: (s,), speakers)
+    )
     con.commit()
     sys.exit(1)
 
