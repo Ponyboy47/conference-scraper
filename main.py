@@ -111,7 +111,9 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "The Sustaining of Church Officers",
             "The Church Audit Committee Report",
         ]
-        if any(map(lambda prefix: title.startswith(prefix), prefixes)) or title.endswith("Session"):
+        if any(
+            map(lambda prefix: title.startswith(prefix), prefixes)
+        ) or title.endswith("Session"):
             return {}
 
         author_tag = soup.find("p", {"class": "author-name"})
@@ -160,6 +162,7 @@ def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
         )
     return [result for result in results if result]  # Filter out empty results
 
+
 def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     db_path = Path("conference_talks.db")
     if db_path.exists():
@@ -168,21 +171,40 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     con = sqlite3.connect(db_path)
     cur = con.cursor()
 
-
-    cur.execute("CREATE TABLE speakers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
-    cur.execute("CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)")
-    cur.execute("CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, organization INTEGER UNIQUE NOT NULL, rank INTEGER NOT NULL)")
-    cur.execute("CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE NOT NULL, season TEXT UNIQUE NOT NULL)")
-    cur.execute("CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL)")
-    cur.execute("CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)")
-    cur.execute("CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')))")
-    cur.execute("CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, name TEXT UNIQUE NOT NULL)")
+    cur.execute(
+        "CREATE TABLE speakers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)"
+    )
+    cur.execute(
+        "CREATE TABLE organization(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)"
+    )
+    cur.execute(
+        "CREATE TABLE callings(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, organization INTEGER UNIQUE NOT NULL, rank INTEGER NOT NULL)"
+    )
+    cur.execute(
+        "CREATE TABLE conferences(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE NOT NULL, season TEXT UNIQUE NOT NULL)"
+    )
+    cur.execute(
+        "CREATE TABLE talks(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, emeritus INTEGER NOT NULL DEFAULT 0, speaker INTEGER NOT NULL, conference INTEGER NOT NULL, calling INTEGER NOT NULL)"
+    )
+    cur.execute(
+        "CREATE TABLE talk_texts(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, text TEXT NOT NULL)"
+    )
+    cur.execute(
+        "CREATE TABLE talk_urls(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')))"
+    )
+    cur.execute(
+        "CREATE TABLE talk_topics(id INTEGER PRIMARY KEY AUTOINCREMENT, talk INTEGER UNIQUE NOT NULL, name TEXT UNIQUE NOT NULL)"
+    )
 
     return con, cur
 
 
-calling_re = re.compile(r"(?P<emeritus>(recently )?((released|former) )?((as|member of the) )?)(?P<calling>[a-zA-Z, ]+)")
+calling_re = re.compile(
+    r"(?P<emeritus>(recently )?((released|former) )?((as|member of the) )?)(?P<calling>[a-zA-Z, ]+)"
+)
 org_re = re.compile(r"[a-zA-Z ]+(, | in the )(?P<group>[a-zA-Z ]+)")
+
+
 class Calling:
     def __init__(self, full_calling: str | None):
         if not full_calling:
@@ -252,12 +274,18 @@ class Calling:
                 rank = 9
             else:
                 raise ValueError(f"Unsupported calling for organization: {calling}")
-        elif any(map(lambda field: field in lowered, [
-            "church audit committee",
-            "church leadership committee",
-        ])):
+        elif any(
+            map(
+                lambda field: field in lowered,
+                [
+                    "church audit committee",
+                    "church leadership committee",
+                ],
+            )
+        ):
             org = calling.title()
         return org, rank
+
 
 @dataclass
 class Conference:
@@ -270,6 +298,7 @@ class Conference:
     def __eq__(self, other) -> bool:
         return self.year == other.year and self.season == other.season
 
+
 def save_sql(conference_df: pd.DataFrame) -> None:
     con, cur = setup_sql()
     speakers: set[str] = set()
@@ -281,7 +310,9 @@ def save_sql(conference_df: pd.DataFrame) -> None:
         orgs.add(calling.organization)
         conferences.add(Conference(row.year, row.season))
     cur.executemany("INSERT INTO speakers (name) VALUES (?)", speakers)
-    cur.executemany("INSERT INTO conferences (year, season) VALUES (:year, :season)", conferences)
+    cur.executemany(
+        "INSERT INTO conferences (year, season) VALUES (:year, :season)", conferences
+    )
     con.commit()
     sys.exit(1)
 
@@ -310,12 +341,18 @@ def main_scrape_process():
         conference_df[col] = conference_df[col].apply(
             lambda x: x.replace("\t", "") if isinstance(x, str) else x
         )
-    conference_df.sort_values(["year", "season", "url", "speaker", "title"], ascending=[True, True, True, True, True], inplace=True)
+    conference_df.sort_values(
+        ["year", "season", "url", "speaker", "title"],
+        ascending=[True, True, True, True, True],
+        inplace=True,
+    )
 
     save_sql(conference_df)
 
     # Save to JSON and sqlite db
-    conference_df.to_json("conference_talks.json", orient="records", indent=2, sort_keys=True)
+    conference_df.to_json(
+        "conference_talks.json", orient="records", indent=2, sort_keys=True
+    )
     print("Scraping complete. Data saved to 'conference_talks.json'.")
 
 
