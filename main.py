@@ -1,7 +1,9 @@
 import json
+import logging
 import os
 import re
 import sqlite3
+import sys
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -17,15 +19,41 @@ from tqdm import tqdm
 app = typer.Typer()
 
 
+def setup_logging(verbose: bool = False, log_file: str | None = None) -> None:
+    """Configure logging to stdout or file."""
+    logger = logging.getLogger()
+    if verbose:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+
+    # Remove any existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # Create formatter
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+    # Add handler based on log_file parameter
+    if log_file:
+        handler = logging.FileHandler(log_file)
+    else:
+        handler = logging.StreamHandler(sys.stdout)
+
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+
 def get_soup(url: str) -> BeautifulSoup | None:
     """Create a tree structure (BeautifulSoup) out of a GET request's HTML."""
+    logger = logging.getLogger(__name__)
     try:
         r = requests.get(url, allow_redirects=True)
         r.raise_for_status()
-        print(f"Successfully fetched {r.url}")
+        logger.debug(f"Successfully fetched {r.url}")
         return BeautifulSoup(r.content, "html5lib")
     except requests.RequestException as e:
-        print(f"Error fetching {url}: {e}")
+        logger.error(f"Error fetching {url}: {e}")
         return None
 
 
@@ -36,9 +64,10 @@ def is_decade_page(url: str) -> bool:
 
 def scrape_conference_pages(main_page_url: str) -> list[str]:
     """Retrieve a list of URLs for each conference (year/month) from the main page."""
+    logger = logging.getLogger(__name__)
     soup = get_soup(main_page_url)
     if soup is None:
-        print(f"Failed to fetch content from {main_page_url}")
+        logger.error(f"Failed to fetch content from {main_page_url}")
         return []
 
     all_conference_links = []
@@ -64,13 +93,14 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
         else:
             all_conference_links.append(link)
 
-    print(f"Total conference links found: {len(all_conference_links)}")
-    print("Sample conference links:", all_conference_links[:5])
+    logger.info(f"Total conference links found: {len(all_conference_links)}")
+    logger.debug(f"Sample conference links: {all_conference_links[:5]}")
     return all_conference_links
 
 
 def scrape_talk_urls(conference_url: str) -> list[set]:
     """Retrieve a list of URLs for each talk in a specific conference."""
+    logger = logging.getLogger(__name__)
     soup = get_soup(conference_url)
     if soup is None:
         return []
@@ -85,14 +115,15 @@ def scrape_talk_urls(conference_url: str) -> list[set]:
     talk_links = list(set(talk_links))
     talk_links = [link for link in talk_links if not link.endswith("session?lang=eng")]
 
-    print(f"Found {len(talk_links)} talk links in {conference_url}")
+    logger.info(f"Found {len(talk_links)} talk links in {conference_url}")
     if talk_links:
-        print("Sample talk links:", talk_links[:3])
+        logger.debug(f"Sample talk links: {talk_links[:3]}")
     return talk_links
 
 
 def scrape_talk_data(url: str) -> dict[str, str | None]:
     """Scrapes a single talk for data such as: title, conference, calling, speaker, content."""
+    logger = logging.getLogger(__name__)
     try:
         soup = get_soup(url)
         if soup is None:
@@ -146,7 +177,7 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "talk": content,
         }
     except Exception as e:
-        print(f"Failed to scrape {url}: {e}")
+        logger.error(f"Failed to scrape {url}: {e}")
         return {}
 
 
@@ -164,6 +195,7 @@ def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
 
 
 def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
+    logger = logging.getLogger(__name__)
     db_path = Path("conference_talks.db")
     if db_path.exists():
         db_path.unlink()
@@ -257,6 +289,7 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         )
     """)
 
+    logger.info("Configured SQLite database")
     return con, cur
 
 
@@ -382,6 +415,7 @@ def _get_speaker(full_speaker: str | None) -> str | None:
 
 
 def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame) -> None:
+    logger = logging.getLogger(__name__)
     speakers: list[str] = []
     orgs: list[str] = []
     conferences: set[Conference] = set()
@@ -390,12 +424,12 @@ def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.Dat
     for idx, row in conference_df.iterrows():
         speaker = _get_speaker(row.speaker)
         if not speaker:
-            print("Talk has no speaker:", row.title, row.year, row.season)
+            logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
         speakers.append(speaker)
 
         calling = Calling(row.calling)
         if not calling:
-            print("Talk has no calling:", row.title, row.year, row.season)
+            logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
         orgs.append(calling.organization)
         callings.append(calling)
 
@@ -454,16 +488,16 @@ def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.Dat
 
         try:
             cur.execute("INSERT INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
-        except:
-            print(f"Failed inserting {talk_id} - {talk} - {row.season} {row.year}")
-            raise
+        except sqlite3.IntegrityError:
+            logger.exception(f"Failed inserting talk {talk_id} - {talk} - {row.season} {row.year}")
         cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
 
 
 def main_scrape_process():
+    logger = logging.getLogger(__name__)
+
     # Doing this first to make the feedback loop for SQL schema changes faster
     con, cur = setup_sql()
-    print("Configured SQLite db file")
 
     main_url = "https://www.churchofjesuschrist.org/study/general-conference?lang=eng"
     conference_urls = scrape_conference_pages(main_url)
@@ -472,7 +506,7 @@ def main_scrape_process():
     for conference_url in tqdm(conference_urls, desc="Scraping conferences"):
         all_talk_urls.extend(scrape_talk_urls(conference_url))
 
-    print(f"Total talks found: {len(all_talk_urls)}")
+    logger.info(f"Total talks found: {len(all_talk_urls)}")
 
     # Scrape talks in parallel
     conference_talks = scrape_talk_data_parallel(all_talk_urls)
@@ -492,25 +526,32 @@ def main_scrape_process():
         ascending=[True, True, True, True, True],
         inplace=True,
     )
-    print("Scraping complete")
+    logger.info("Scraping complete")
 
     # Save to JSON and sqlite db
     conference_json = conference_df.to_dict(orient="records")
     with open("conference_talks.json", "w") as f:
         json.dump(conference_json, f, indent=2, sort_keys=True)
-    print("JSON data saved to 'conference_talks.json'.")
+    logger.info("JSON data saved to 'conference_talks.json'.")
 
     save_sql(con, cur, conference_df)
-    print("SQLite data saved to 'conference_talks.db'.")
+    logger.info("SQLite data saved to 'conference_talks.db'.")
 
 
 @app.command()
-def scrape(verbose: bool = False):
+def scrape(verbose: bool = False, log_file: str | None = None):
+    """Run the conference scraper."""
+    setup_logging(verbose, log_file)
+
+    logger = logging.getLogger(__name__)
+    logger.info("Starting conference scraper")
+
     # Run the scraper
     start = time.time()
     main_scrape_process()
     end = time.time()
-    print(f"Total time taken: {end - start} seconds")
+
+    logger.info(f"Total time taken: {end - start:.2f} seconds")
 
 
 if __name__ == "__main__":
