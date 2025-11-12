@@ -446,14 +446,20 @@ def save_sql(
             )
 
         calling = callings[idx]
-        org_id = cur.execute(
-            "SELECT id FROM organizations WHERE name = ?", (calling.organization,)
-        )
-        cur.execute(
-            "INSERT INTO callings (name, organization, rank) VALUES (?, ?, ?)",
-            (calling.name, org_id, calling.rank),
-        )
-        calling_id = cur.lastrowid
+        if calling:
+            org_id = cur.execute(
+                "SELECT id FROM organizations WHERE name = ?", (calling.organization,)
+            )
+            cur.execute(
+                "INSERT INTO callings (name, organization, rank) VALUES (?, ?, ?)",
+                (calling.name, org_id, calling.rank),
+            )
+            calling_id = cur.lastrowid
+
+            cur.execute(
+                "INSERT INTO talk_callings (talk, calling) VALUES (?, ?)",
+                (talk_id, calling_id),
+            )
 
 
 def main_scrape_process():
