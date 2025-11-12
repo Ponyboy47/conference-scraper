@@ -371,6 +371,8 @@ speaker_re = re.compile(
     r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][a-zA-Z,.\s-]+)$",
     flags=re.I,
 )
+
+
 def _get_speaker(full_speaker: str | None) -> str | None:
     if not full_speaker:
         return None
@@ -385,10 +387,11 @@ def _get_speaker(full_speaker: str | None) -> str | None:
 def save_sql(
     con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame
 ) -> None:
-    speakers: list[tuple[str]] = []
-    orgs: list[tuple[str]] = []
+    speakers: list[str] = []
+    orgs: list[str] = []
     conferences: set[Conference] = set()
     talks: list[tuple[str, int]] = []
+    callings: list[Calling] = []
     for idx, row in conference_df.iterrows():
         speaker = _get_speaker(row.speaker)
         if not speaker:
@@ -399,29 +402,49 @@ def save_sql(
         if not calling:
             print("Talk has no calling:", row.title, row.year, row.season)
         orgs.append(calling.organization)
+        callings.append(calling)
 
-        conferences.set(Conference(row.year, row.season))
+        conferences.add(Conference(row.year, row.season))
         talks.append((row.title, 1 if calling.emeritus else 0))
 
     cur.executemany(
         "INSERT INTO conferences (year, season) VALUES (:year, :season)",
         map(lambda c: c.__dict__, conferences),
     )
-    cur.executemany("INSERT INTO speakers (name) VALUES (?)", map(lambda v: (v,), set(speakers)))
-    cur.executemany("INSERT INTO organizations (name) VALUES (?)", map(lambda v: (v,), set(orgs)))
+    cur.executemany(
+        "INSERT INTO speakers (name) VALUES (?)",
+        map(lambda v: (v,), filter(lambda v: v, set(speakers))),
+    )
+    cur.executemany(
+        "INSERT INTO organizations (name) VALUES (?)",
+        map(lambda v: (v,), filter(lambda v: v, set(orgs))),
+    )
     con.commit()
 
     # Now that the easy things are inserted, query for foreign key IDs
     for idx, row in conference_df.iterrows():
         talk, emeritus = talks[idx]
 
-        conf = cur.execute("SELECT id FROM conferences WHERE (year = ?, season = ?)", row.year, row.season).fetchone()[0]
-        val = cur.execute("INSERT INTO talks (title, emeritus, conference) VALUES (?, ?, ?)", talk, emeritus, conf)
-        print(val)
-
-        calling = callings[idx]
+        conference_id = cur.execute(
+            "SELECT id FROM conferences WHERE year = ? AND season = ?",
+            (row.year, row.season),
+        ).fetchone()[0]
+        cur.execute(
+            "INSERT INTO talks (title, emeritus, conference) VALUES (?, ?, ?)",
+            (talk, emeritus, conference_id),
+        )
+        talk_id = cur.lastrowid
         speaker = speakers[idx]
+        calling = callings[idx]
 
+        if speaker:
+            speaker_id = cur.execute(
+                "SELECT id FROM speakers WHERE name = ?", (speaker,)
+            ).fetchone()[0]
+            cur.execute(
+                "INSERT INTO talk_speakers (talk, speaker) VALUES (?, ?)",
+                (talk_id, speaker_id),
+            )
 
 
 def main_scrape_process():
