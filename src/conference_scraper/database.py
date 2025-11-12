@@ -1,12 +1,13 @@
 """Database operations for storing conference data."""
 
+import functools
 import logging
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
 
-from .models import Calling, Conference, get_speaker
+from .models import Calling, get_speaker
 
 
 def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
@@ -109,82 +110,98 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     return con, cur
 
 
+@functools.cache
+def get_or_create_speaker(cur: sqlite3.Cursor, name: str) -> int:
+    """Get or create a speaker and return their ID. Cached to avoid duplicate operations."""
+    cur.execute("INSERT INTO speakers (name) VALUES (?)", (name,))
+    return cur.lastrowid
+
+
+@functools.cache
+def get_or_create_organization(cur: sqlite3.Cursor, name: str) -> int:
+    """Get or create an organization and return their ID. Cached to avoid duplicate operations."""
+    cur.execute("INSERT INTO organizations (name) VALUES (?)", (name,))
+    return cur.lastrowid
+
+
+@functools.cache
+def get_or_create_calling(cur: sqlite3.Cursor, name: str, organization_id: int, rank: int) -> int:
+    """Get or create a calling and return their ID. Cached to avoid duplicate operations."""
+    cur.execute("INSERT INTO callings (name, organization, rank) VALUES (?, ?, ?)", (name, organization_id, rank))
+    return cur.lastrowid
+
+
+@functools.cache
+def get_or_create_conference(cur: sqlite3.Cursor, year: int, season: str) -> int:
+    """Get or create a conference and return their ID. Cached to avoid duplicate operations."""
+    cur.execute("INSERT INTO conferences (year, season) VALUES (?, ?)", (year, season))
+    return cur.lastrowid
+
+
+@functools.cache
+def get_or_create_talk(cur: sqlite3.Cursor, title: str, conference_id: int, emeritus: int) -> int:
+    """Get or create a talk and return their ID. Cached to avoid duplicate operations."""
+    cur.execute("INSERT INTO talks (title, emeritus, conference) VALUES (?, ?, ?)", (title, emeritus, conference_id))
+    return cur.lastrowid
+
+
+def insert_data(cur: sqlite3.Cursor, row: pd.Series) -> None:
+    logger = logging.getLogger(__name__)
+
+    # Get or create conference
+    conference_id = get_or_create_conference(cur, row.year, row.season)
+
+    # Get or create organization and calling
+    calling_obj = Calling(row.calling)
+    calling_id = None
+    if calling_obj:
+        org_id = get_or_create_organization(cur, calling_obj.organization)
+        calling_id = get_or_create_calling(cur, calling_obj.name, org_id, calling_obj.rank)
+    else:
+        logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
+
+    # Get or create talk
+    emeritus = 1 if calling_obj and calling_obj.emeritus else 0
+    talk_id = get_or_create_talk(cur, row.title, conference_id, emeritus)
+
+    # Insert relationships (these don't have UNIQUE constraints in the same way)
+
+    # Get or create speaker
+    speaker_name = get_speaker(row.speaker)
+    if speaker_name:
+        speaker_id = get_or_create_speaker(cur, speaker_name)
+        cur.execute("INSERT OR IGNORE INTO talk_speakers (talk, speaker) VALUES (?, ?)", (talk_id, speaker_id))
+    else:
+        logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
+
+    if calling_id:
+        cur.execute("INSERT OR IGNORE INTO talk_callings (talk, calling) VALUES (?, ?)", (talk_id, calling_id))
+
+    # Insert talk text
+    cur.execute("INSERT OR IGNORE INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
+
+    # Insert talk URL
+    cur.execute("INSERT OR IGNORE INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
+
+
 def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame) -> None:
     """Save conference data to SQLite database."""
     logger = logging.getLogger(__name__)
-    speakers: list[str] = []
-    orgs: list[str] = []
-    conferences: set[Conference] = set()
-    talks: list[tuple[str, int]] = []
-    callings: list[Calling] = []
 
+    # Clear caches at the start to ensure fresh data for each run
+    get_or_create_speaker.cache_clear()
+    get_or_create_organization.cache_clear()
+    get_or_create_calling.cache_clear()
+    get_or_create_conference.cache_clear()
+    get_or_create_talk.cache_clear()
+
+    # Process each talk individually
     for idx, row in conference_df.iterrows():
-        speaker = get_speaker(row.speaker)
-        if not speaker:
-            logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
-        speakers.append(speaker)
-
-        calling = Calling(row.calling)
-        if not calling:
-            logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
-        orgs.append(calling.organization)
-        callings.append(calling)
-
-        conferences.add(Conference(row.year, row.season))
-        talks.append((row.title, 1 if calling.emeritus else 0))
-
-    cur.executemany(
-        "INSERT INTO conferences (year, season) VALUES (:year, :season)",
-        map(lambda c: c.__dict__, conferences),
-    )
-    cur.executemany(
-        "INSERT INTO speakers (name) VALUES (?)",
-        map(lambda v: (v,), filter(lambda v: v, set(speakers))),
-    )
-    cur.executemany(
-        "INSERT INTO organizations (name) VALUES (?)",
-        map(lambda v: (v,), filter(lambda v: v, set(orgs))),
-    )
-    con.commit()
-
-    # Now that the easy things are inserted, query for foreign key IDs
-    for idx, row in conference_df.iterrows():
-        talk, emeritus = talks[idx]
-
-        conference_id = cur.execute(
-            "SELECT id FROM conferences WHERE year = ? AND season = ?",
-            (row.year, row.season),
-        ).fetchone()[0]
-        cur.execute(
-            "INSERT INTO talks (title, emeritus, conference) VALUES (?, ?, ?)",
-            (talk, emeritus, conference_id),
-        )
-        talk_id = cur.lastrowid
-        speaker = speakers[idx]
-
-        if speaker:
-            speaker_id = cur.execute("SELECT id FROM speakers WHERE name = ?", (speaker,)).fetchone()[0]
-            cur.execute(
-                "INSERT INTO talk_speakers (talk, speaker) VALUES (?, ?)",
-                (talk_id, speaker_id),
-            )
-
-        calling = callings[idx]
-        if calling:
-            org_id = cur.execute("SELECT id FROM organizations WHERE name = ?", (calling.organization,)).fetchone()[0]
-            cur.execute(
-                "INSERT INTO callings (name, organization, rank) VALUES (?, ?, ?)",
-                (calling.name, org_id, calling.rank),
-            )
-            calling_id = cur.lastrowid
-
-            cur.execute(
-                "INSERT INTO talk_callings (talk, calling) VALUES (?, ?)",
-                (talk_id, calling_id),
-            )
-
         try:
-            cur.execute("INSERT INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
-        except sqlite3.IntegrityError:
-            logger.exception(f"Failed inserting talk {talk_id} - {talk} - {row.season} {row.year}")
-        cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
+            insert_data(cur, row)
+        except Exception as e:
+            logger.error(f"Failed to save talk '{row.title}' ({row.year} {row.season}): {e}")
+            continue
+
+    con.commit()
+    logger.debug("Database save operation completed")

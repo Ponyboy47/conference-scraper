@@ -1,7 +1,6 @@
 """Data models and classes for conference data."""
 
 import re
-from dataclasses import dataclass
 
 calling_re = re.compile(
     r"(?P<emeritus>(recently\s)?((released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[a-zA-Z,\s()0-9-]+)$",
@@ -100,20 +99,6 @@ class Calling:
         ):
             org = calling.title()
         return org, rank
-
-
-@dataclass
-class Conference:
-    """Represents a General Conference with year and season."""
-
-    year: int
-    season: str
-
-    def __hash__(self) -> int:
-        return hash((self.year, self.season))
-
-    def __eq__(self, other) -> bool:
-        return self.year == other.year and self.season == other.season
 
 
 def get_speaker(full_speaker: str | None) -> str | None:

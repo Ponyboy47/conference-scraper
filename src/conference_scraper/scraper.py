@@ -31,6 +31,7 @@ def is_decade_page(url: str) -> bool:
 def scrape_conference_pages(main_page_url: str) -> list[str]:
     """Retrieve a list of URLs for each conference (year/month) from the main page."""
     logger = logging.getLogger(__name__)
+    logger.info(f"Scraping conference pages from {main_page_url}")
     soup = get_soup(main_page_url)
     if soup is None:
         logger.error(f"Failed to fetch content from {main_page_url}")
