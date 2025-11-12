@@ -12,3 +12,42 @@ dependencies = [
     "requests>=2.32.4",
     "tqdm>=4.67.1",
 ]
+
+[tool.ruff]
+# Same as Black.
+line-length = 120
+indent-width = 4
+
+# Assume Python 3.12+
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable pycodestyle (`E`) error codes, Pyflakes (`F`) error codes,
+# and isort (`I`) import sorting rules.
+select = ["E", "F", "I"]
+
+# Ignore a variety of commonly ignored rules.
+ignore = [
+    # Allow non-abstract empty methods in abstract base classes
+    "B027",
+    # Allow boolean positional values in function calls, like `dict.get(... True)`
+    "FBT003",
+    # Ignore checks for possible passwords
+    "S105", "S106", "S107",
+    # Ignore complexity
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.4",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["conference_scraper"]
