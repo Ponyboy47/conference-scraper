@@ -86,7 +86,6 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |url|text|The actual URL assocated with the talk|
 |kind|text|The type of data expected at the URL (audio, video, or text)|
 
-
 #### Talk Topics
 
 |column|type|description|
@@ -94,7 +93,10 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 |talk|integer|The talk foreign key to which this topic corresponds|
 |name|text|The name of the topic|
 
-## Features
+## Contributing
 
-[x] Filters out "whole session" messages during scraping
-[x] Filters out "non-spiritual" messages (like financial, audit, or statistical reports)
+Check out [CONTRIBUTING.md](CONTRIBUTING.md)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
