@@ -17,7 +17,7 @@ def setup_logging(verbose: bool = False, log_file: str | None = None) -> None:
         logger.removeHandler(handler)
 
     # Create formatter
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
     # Add handler based on log_file parameter
     if log_file:
