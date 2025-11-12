@@ -273,7 +273,7 @@ org_re = re.compile(r"[a-zA-Z\s]+(,\s|\sin\sthe\s)(?P<org>[a-zA-Z\s-]+)$", flags
 class Calling:
     def __init__(self, full_calling: str | None):
         if not full_calling:
-            self.calling = "Unknown"
+            self.name = "Unknown"
             self.organization = "Unknown"
             self.rank = 1000
             self.emeritus = False
@@ -283,8 +283,8 @@ class Calling:
         if not matches:
             raise ValueError(f"Unsupported calling: {full_calling}")
 
-        self.calling = matches.group("calling").strip()
-        self.organization, self.rank = Calling.get_org_and_rank(self.calling)
+        self.name = matches.group("calling").strip()
+        self.organization, self.rank = Calling.get_org_and_rank(self.name)
         self.emeritus = len(matches.group("emeritus").strip()) > 0
 
     def __bool__(self) -> bool:
@@ -435,7 +435,6 @@ def save_sql(
         )
         talk_id = cur.lastrowid
         speaker = speakers[idx]
-        calling = callings[idx]
 
         if speaker:
             speaker_id = cur.execute(
@@ -445,6 +444,16 @@ def save_sql(
                 "INSERT INTO talk_speakers (talk, speaker) VALUES (?, ?)",
                 (talk_id, speaker_id),
             )
+
+        calling = callings[idx]
+        org_id = cur.execute(
+            "SELECT id FROM organizations WHERE name = ?", (calling.organization,)
+        )
+        cur.execute(
+            "INSERT INTO callings (name, organization, rank) VALUES (?, ?, ?)",
+            (calling.name, org_id, calling.rank),
+        )
+        calling_id = cur.lastrowid
 
 
 def main_scrape_process():
