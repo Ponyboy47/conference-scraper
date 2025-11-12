@@ -11,6 +11,16 @@ dependencies = [
     "pypdf2>=3.0.1",
     "requests>=2.32.4",
     "tqdm>=4.67.1",
+    "typer>=0.20.0",
+]
+
+[dependency-groups]
+dev = [
+    "mdformat>=1.0.0",
+    "mdformat-black>=0.1.1",
+    "mdformat-config>=0.2.1",
+    "pre-commit>=4.4.0",
+    "ruff>=0.14.4",
 ]
 
 [tool.ruff]
@@ -43,11 +53,6 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.format]
-
-[dependency-groups]
-dev = [
-    "ruff>=0.14.4",
-]
 
 [tool.ruff.lint.isort]
 known-first-party = ["conference_scraper"]
