@@ -1,16 +1,20 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-import re
-import unicodedata
-import time
-from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor
-import sqlite3
-from pathlib import Path
-import os
-from dataclasses import dataclass
 import json
+import os
+import re
+import sqlite3
+import time
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+
+import pandas as pd
+import requests
+import typer
+from bs4 import BeautifulSoup
+from tqdm import tqdm
+
+app = typer.Typer()
 
 
 def get_soup(url: str) -> BeautifulSoup | None:
@@ -115,9 +119,7 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "Saturday Morning",
             "Proclamation",
         ]
-        if any(
-            map(lambda prefix: title.startswith(prefix), prefixes)
-        ) or title.endswith("Session"):
+        if any(map(lambda prefix: title.startswith(prefix), prefixes)) or title.endswith("Session"):
             return {}
 
         author_tag = soup.find("p", {"class": "author-name"})
@@ -128,11 +130,7 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
 
         content_array = soup.find("div", {"class": "body-block"})
         content = (
-            "\n\n".join(
-                paragraph.text.strip() for paragraph in content_array.find_all("p")
-            )
-            if content_array
-            else None
+            "\n\n".join(paragraph.text.strip() for paragraph in content_array.find_all("p")) if content_array else None
         )
 
         year = re.search(r"/(\d{4})/", url).group(1)
@@ -154,9 +152,7 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
 
 def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
     """Scrapes all talks in parallel using ThreadPoolExecutor."""
-    with ThreadPoolExecutor(
-        max_workers=os.cpu_count()
-    ) as executor:  # Adjust `max_workers` as needed
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:  # Adjust `max_workers` as needed
         results = list(
             tqdm(
                 executor.map(scrape_talk_data, urls),
@@ -237,7 +233,8 @@ def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
         CREATE TABLE talk_texts(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             talk INTEGER UNIQUE NOT NULL,
-            text TEXT UNIQUE NOT NULL
+            text TEXT NOT NULL,
+            FOREIGN KEY(talk) REFERENCES talks
         )
     """)
     cur.execute("""
@@ -384,9 +381,7 @@ def _get_speaker(full_speaker: str | None) -> str | None:
     return speaker
 
 
-def save_sql(
-    con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame
-) -> None:
+def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame) -> None:
     speakers: list[str] = []
     orgs: list[str] = []
     conferences: set[Conference] = set()
@@ -437,9 +432,7 @@ def save_sql(
         speaker = speakers[idx]
 
         if speaker:
-            speaker_id = cur.execute(
-                "SELECT id FROM speakers WHERE name = ?", (speaker,)
-            ).fetchone()[0]
+            speaker_id = cur.execute("SELECT id FROM speakers WHERE name = ?", (speaker,)).fetchone()[0]
             cur.execute(
                 "INSERT INTO talk_speakers (talk, speaker) VALUES (?, ?)",
                 (talk_id, speaker_id),
@@ -447,9 +440,7 @@ def save_sql(
 
         calling = callings[idx]
         if calling:
-            org_id = cur.execute(
-                "SELECT id FROM organizations WHERE name = ?", (calling.organization,)
-            )
+            org_id = cur.execute("SELECT id FROM organizations WHERE name = ?", (calling.organization,)).fetchone()[0]
             cur.execute(
                 "INSERT INTO callings (name, organization, rank) VALUES (?, ?, ?)",
                 (calling.name, org_id, calling.rank),
@@ -460,6 +451,13 @@ def save_sql(
                 "INSERT INTO talk_callings (talk, calling) VALUES (?, ?)",
                 (talk_id, calling_id),
             )
+
+        try:
+            cur.execute("INSERT INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
+        except:
+            print(f"Failed inserting {talk_id} - {talk} - {row.season} {row.year}")
+            raise
+        cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
 
 
 def main_scrape_process():
@@ -485,9 +483,7 @@ def main_scrape_process():
     # Normalize Unicode and clean data
     for col in conference_df.columns:
         conference_df[col] = conference_df[col].apply(
-            lambda x: unicodedata.normalize("NFD", x)
-            .replace("\t", "    ")
-            .replace("\xa0", " ")
+            lambda x: unicodedata.normalize("NFD", x).replace("\t", "    ").replace("\xa0", " ")
             if isinstance(x, str)
             else x
         )
@@ -508,7 +504,8 @@ def main_scrape_process():
     print("SQLite data saved to 'conference_talks.db'.")
 
 
-def main():
+@app.command()
+def scrape(verbose: bool = False):
     # Run the scraper
     start = time.time()
     main_scrape_process()
@@ -517,4 +514,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    app()
