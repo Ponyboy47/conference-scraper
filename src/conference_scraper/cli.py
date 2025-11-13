@@ -60,16 +60,20 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
     )
     logger.info("Scraping complete")
 
-    # Save to JSON and sqlite db
+    # Save to JSON
     conference_json = conference_df.to_dict(orient="records")
     with open("conference_talks.json", "w") as f:
         json.dump(conference_json, f, indent=2, sort_keys=True)
     logger.info("JSON data saved to 'conference_talks.json'.")
 
-    # Extract topics if requested
-    topics_df = None
-    if extract_topics:
-        logger.info("Extracting topics from talks (this may take a while due to rate limiting)...")
+    # Save to database first (without topics) to determine which talks are new
+    new_talks_indices = save_sql(con, cur, conference_df, topics_df=None)
+
+    # Extract topics only for new talks
+    if extract_topics and new_talks_indices:
+        logger.info(
+            f"Extracting topics for {len(new_talks_indices)} new talks (this may take a while due to rate limiting)..."
+        )
         api_key = groq_api_key or os.getenv("GROQ_API_KEY")
         if not api_key:
             raise AttributeError(
@@ -78,29 +82,40 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
 
         client = Groq(api_key=api_key)
 
-        # Extract texts for topic analysis
-        talk_texts = []
-        for idx, row in conference_df.iterrows():
-            if pd.notna(row.talk) and row.talk and row.talk.strip():
-                talk_texts.append(row.talk)
+        # Extract texts only for new talks
+        new_talk_texts = []
+        for idx in new_talks_indices:
+            row = conference_df.loc[idx]
+            if pd.notna(row.talk) and row.talk.strip():
+                new_talk_texts.append(row.talk)
             else:
-                talk_texts.append("")
+                new_talk_texts.append("")
 
         # Use batch extraction with rate limiting
-        topics_list = extract_topics_batch(talk_texts, client, batch_size=10)
+        topics_list = extract_topics_batch(new_talk_texts, client, batch_size=10)
 
-        # Filter out empty topics for talks without text
-        filtered_topics = []
-        for text, topics in zip(talk_texts, topics_list):
+        # Update topics directly in database for new talks
+        from .database import update_talk_topics
+
+        # Create topics DataFrame for new talks
+        topics_df = pd.DataFrame(index=new_talks_indices, columns=["topics"])
+        for i, idx in enumerate(new_talks_indices):
+            text = new_talk_texts[i]
+            topics = topics_list[i]
             if text.strip():  # Only include topics for talks with actual content
-                filtered_topics.append(topics)
+                topics_df.loc[idx, "topics"] = topics
             else:
-                filtered_topics.append([])
+                topics_df.loc[idx, "topics"] = []
 
-        topics_df = pd.DataFrame({"topics": filtered_topics}, index=conference_df.index)
-        logger.info("Topic extraction complete")
+        # Update topics for the new talks
+        update_talk_topics(cur, conference_df.loc[new_talks_indices], topics_df)
+        con.commit()
 
-    save_sql(con, cur, conference_df, topics_df)
+        logger.info("Topic extraction and database update complete")
+
+    elif extract_topics and not new_talks_indices:
+        logger.info("No new talks found - skipping topic extraction")
+
     logger.info("SQLite data saved to 'conference_talks.db'.")
 
 

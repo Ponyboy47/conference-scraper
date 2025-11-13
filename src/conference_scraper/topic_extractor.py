@@ -23,7 +23,7 @@ def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
     Returns:
         List of topic strings (empty list if extraction fails)
     """
-    if not text or not text.strip():
+    if not text.strip():
         return []
 
     # Highly optimized prompt for minimal tokens while maximizing clarity
