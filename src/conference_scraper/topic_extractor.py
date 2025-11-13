@@ -56,7 +56,9 @@ Topics:"""
 
     try:
         response = client.chat.completions.create(
-            model="mixtral-8x7b-32768",  # Fast, good for topic extraction
+            model="llama-3.1-8b-instant",  # Fast and has higher limits
+            # model="llama-3.3-70b-versatile",  # Best quality for topic extraction
+            # model="meta-llama/llama-4-maverick-17b-128e-instruct",  # Last fallback
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,  # Low temperature for consistent results
             max_tokens=100,  # Enough for 3-10 topics
