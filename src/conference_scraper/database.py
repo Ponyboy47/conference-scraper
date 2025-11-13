@@ -9,6 +9,8 @@ import pandas as pd
 
 from .models import Calling, get_speaker
 
+logger = logging.getLogger(__name__)
+
 
 def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     """Initialize SQLite database with required tables."""
@@ -145,8 +147,14 @@ def get_or_create_talk(cur: sqlite3.Cursor, title: str, conference_id: int, emer
     return cur.lastrowid
 
 
-def insert_data(cur: sqlite3.Cursor, row: pd.Series) -> None:
-    logger = logging.getLogger(__name__)
+def insert_data(cur: sqlite3.Cursor, row: pd.Series, topics: list[str] | None = None) -> None:
+    """Insert a single talk's data into the database.
+
+    Args:
+        cur: Database cursor
+        row: Pandas Series containing talk data
+        topics: Optional list of topics to associate with the talk
+    """
 
     # Get or create conference
     conference_id = get_or_create_conference(cur, row.year, row.season)
@@ -183,11 +191,24 @@ def insert_data(cur: sqlite3.Cursor, row: pd.Series) -> None:
     # Insert talk URL
     cur.execute("INSERT OR IGNORE INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
 
+    # Insert topics if provided
+    if topics:
+        for topic in topics:
+            if topic.strip():  # Only insert non-empty topics
+                cur.execute("INSERT OR IGNORE INTO talk_topics (talk, name) VALUES (?, ?)", (talk_id, topic.strip()))
 
-def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame) -> None:
-    """Save conference data to SQLite database."""
-    logger = logging.getLogger(__name__)
 
+def save_sql(
+    con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.DataFrame, topics_df: pd.DataFrame | None = None
+) -> None:
+    """Save conference data to SQLite database.
+
+    Args:
+        con: Database connection
+        cur: Database cursor
+        conference_df: DataFrame containing talk data
+        topics_df: Optional DataFrame with topics (must have same index as conference_df)
+    """
     # Clear caches at the start to ensure fresh data for each run
     get_or_create_speaker.cache_clear()
     get_or_create_organization.cache_clear()
@@ -198,7 +219,14 @@ def save_sql(con: sqlite3.Connection, cur: sqlite3.Cursor, conference_df: pd.Dat
     # Process each talk individually
     for idx, row in conference_df.iterrows():
         try:
-            insert_data(cur, row)
+            # Get topics for this talk if available
+            topics = None
+            if topics_df is not None and idx in topics_df.index:
+                topics_raw = topics_df.loc[idx, "topics"]
+                if pd.notna(topics_raw) and isinstance(topics_raw, list):
+                    topics = [t for t in topics_raw if t and t.strip()]  # Filter out empty topics
+
+            insert_data(cur, row, topics)
         except Exception as e:
             logger.error(f"Failed to save talk '{row.title}' ({row.year} {row.season}): {e}")
             continue
