@@ -156,6 +156,7 @@ def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
                 executor.map(scrape_talk_data, urls),
                 total=len(urls),
                 desc="Scraping talks in parallel",
+                unit="talks",
             )
         )
     return [result for result in results if result]  # Filter out empty results

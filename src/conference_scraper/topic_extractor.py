@@ -10,7 +10,7 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 # Rate limiting: Usually 30 requests per minute = 2 seconds between requests
-RATE_LIMIT_SECONDS = 2.1  # Slightly over 2 to be safe
+RATE_LIMIT_SECONDS = 3  # Slightly over 2 to be safe
 
 
 def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
@@ -31,11 +31,11 @@ def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
     truncated_text = text[:4000] if len(text) > 4000 else text
 
     prompt = f"""
-Extract 3-10 main topics from this LDS General Conference talk. Return only comma-separated topics, no explanations:
+Extract 3-5 main topics from this General Conference talk of the Church of Jesus Christ of Latter-day Saints.
+Return only comma-separated topics, no explanations or other text:
 
 {truncated_text}
-
-Topics:"""
+"""
 
     try:
         response = client.chat.completions.create(
@@ -44,7 +44,7 @@ Topics:"""
             # model="meta-llama/llama-4-maverick-17b-128e-instruct",  # Last fallback
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,  # Low temperature for consistent results
-            max_tokens=100,  # Enough for 3-10 topics
+            max_tokens=100,  # Enough for 3-5 topics
             top_p=0.9,
         )
 
@@ -60,8 +60,8 @@ Topics:"""
                 topics.append(topic)
 
         topic_count = len(topics)
-        if topic_count < 3 or topic_count > 10:
-            logger.warning(f"Extracted {topic_count} topics, expected 3-10")
+        if topic_count < 3 or topic_count > 5:
+            logger.warning(f"Extracted {topic_count} topics, expected 3-5")
 
         logger.debug(f"Extracted {topic_count} topics: {topics}")
         return topics
@@ -71,13 +71,12 @@ Topics:"""
         return []
 
 
-def extract_topics_batch(texts: List[str], client: groq.Groq, batch_size: int = 10) -> List[List[str]]:
-    """Extract topics for multiple texts with batch processing and rate limiting.
+def extract_topics(texts: List[str], client: groq.Groq) -> List[List[str]]:
+    """Extract topics for multiple texts with rate limiting.
 
     Args:
         texts: List of text strings to analyze
         client: Groq API client instance
-        batch_size: Number of texts to process before logging progress
 
     Returns:
         List of topic lists, one per input text
@@ -88,7 +87,7 @@ def extract_topics_batch(texts: List[str], client: groq.Groq, batch_size: int = 
     logger.info(f"Starting topic extraction for {total_texts} texts")
 
     # Use tqdm for nice progress bar
-    with tqdm(total=total_texts, desc="Extracting topics", unit="talk") as pbar:
+    with tqdm(total=total_texts, desc="Extracting topics", unit="talks") as pbar:
         for i, text in enumerate(texts):
             topics = extract_topics_groq(text, client)
             results.append(topics)

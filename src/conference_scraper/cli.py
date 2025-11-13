@@ -12,9 +12,8 @@ from groq import Groq
 from tqdm import tqdm
 
 from .config import setup_logging
-from .database import save_sql, setup_sql
+from .database import insert_data_with_topics, setup_sql
 from .scraper import scrape_conference_pages, scrape_talk_data_parallel, scrape_talk_urls
-from .topic_extractor import extract_topics_batch
 
 app = typer.Typer()
 
@@ -35,7 +34,7 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
     conference_urls = scrape_conference_pages(main_url)
 
     all_talk_urls = []
-    for conference_url in tqdm(conference_urls, desc="Scraping conferences"):
+    for conference_url in tqdm(conference_urls, desc="Scraping conferences", unit="conferences"):
         all_talk_urls.extend(scrape_talk_urls(conference_url))
 
     logger.info(f"Total talks found: {len(all_talk_urls)}")
@@ -66,55 +65,30 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
         json.dump(conference_json, f, indent=2, sort_keys=True)
     logger.info("JSON data saved to 'conference_talks.json'.")
 
-    # Save to database first (without topics) to determine which talks are new
-    new_talks_indices = save_sql(con, cur, conference_df, topics_df=None)
+    # Set up topic extraction client if needed
+    topic_client = None
+    if extract_topics:
+        topic_client = Groq(api_key=groq_api_key)
+        logger.info("Topic extraction enabled - processing talks sequentially")
 
-    # Extract topics only for new talks
-    if extract_topics and new_talks_indices:
-        logger.info(
-            f"Extracting topics for {len(new_talks_indices)} new talks (this may take a while due to rate limiting)..."
-        )
-        api_key = groq_api_key or os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise AttributeError(
-                "Topic extraction requested but no API key provided. Set GROQ_API_KEY or use --groq-api-key"
-            )
+    # Process talks one by one, extracting topics immediately for new talks
+    total_new_talks = 0
+    for idx, row in tqdm(conference_df.iterrows(), desc="Processing talks", unit="talk", total=len(conference_df)):
+        try:
+            # Insert talk data and get whether it's new
+            is_new = insert_data_with_topics(cur, row, topic_client)
+            if is_new:
+                total_new_talks += 1
+                con.commit()  # Commit after each new talk to ensure progress is saved
 
-        client = Groq(api_key=api_key)
+        except Exception as e:
+            logger.error(f"Failed to process talk '{row.title}' ({row.year} {row.season}): {e}")
+            continue
 
-        # Extract texts only for new talks
-        new_talk_texts = []
-        for idx in new_talks_indices:
-            row = conference_df.loc[idx]
-            if pd.notna(row.talk) and row.talk.strip():
-                new_talk_texts.append(row.talk)
-            else:
-                new_talk_texts.append("")
-
-        # Use batch extraction with rate limiting
-        topics_list = extract_topics_batch(new_talk_texts, client, batch_size=10)
-
-        # Update topics directly in database for new talks
-        from .database import update_talk_topics
-
-        # Create topics DataFrame for new talks
-        topics_df = pd.DataFrame(index=new_talks_indices, columns=["topics"])
-        for i, idx in enumerate(new_talks_indices):
-            text = new_talk_texts[i]
-            topics = topics_list[i]
-            if text.strip():  # Only include topics for talks with actual content
-                topics_df.loc[idx, "topics"] = topics
-            else:
-                topics_df.loc[idx, "topics"] = []
-
-        # Update topics for the new talks
-        update_talk_topics(cur, conference_df.loc[new_talks_indices], topics_df)
-        con.commit()
-
-        logger.info("Topic extraction and database update complete")
-
-    elif extract_topics and not new_talks_indices:
-        logger.info("No new talks found - skipping topic extraction")
+    if extract_topics:
+        logger.info(f"Processed {total_new_talks} new talks with topic extraction")
+    else:
+        logger.info("Processed all talks (topic extraction disabled)")
 
     logger.info("SQLite data saved to 'conference_talks.db'.")
 
@@ -129,6 +103,13 @@ def scrape(
     groq_api_key: str | None = typer.Option(None, "--groq-api-key", help="Groq API key (or set GROQ_API_KEY env var)"),
 ):
     """Run the conference scraper."""
+    api_key = groq_api_key or os.getenv("GROQ_API_KEY")
+    if extract_topics:
+        if not api_key:
+            raise AttributeError(
+                "Topic extraction requested but no API key provided. Set GROQ_API_KEY or use --groq-api-key"
+            )
+
     setup_logging(verbose, log_file)
 
     logger = logging.getLogger(__name__)
@@ -136,7 +117,7 @@ def scrape(
 
     # Run the scraper
     start = time.time()
-    main_scrape_process(extract_topics=extract_topics, groq_api_key=groq_api_key)
+    main_scrape_process(extract_topics=extract_topics, groq_api_key=api_key)
     end = time.time()
 
     logger.info(f"Total time taken: {end - start:.2f} seconds")

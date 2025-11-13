@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+from groq import Groq
 
 from .models import Calling, get_speaker
 
@@ -324,6 +325,8 @@ def save_sql(
     Returns:
         list: Indices of talks that were newly inserted (for topic extraction)
     """
+    logger = logging.getLogger(__name__)
+
     # Clear caches at the start to ensure fresh data for each run
     get_or_create_speaker.cache_clear()
     get_or_create_organization.cache_clear()
@@ -395,3 +398,70 @@ def update_talk_topics(cur: sqlite3.Cursor, conference_df: pd.DataFrame, topics_
                                 )
 
     logger.debug("Topics updated for existing talks")
+
+
+def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: Groq | None = None) -> bool:
+    """Insert a single talk's data into the database, optionally extracting topics if new.
+
+    Args:
+        cur: Database cursor
+        row: Pandas Series containing talk data
+        topic_client: Groq client for topic extraction (if None, skips topic extraction)
+
+    Returns:
+        bool: True if the talk was newly inserted, False if it already existed
+    """
+    logger = logging.getLogger(__name__)
+
+    # Get or create conference
+    conference_id = get_or_create_conference(cur, row.year, row.season)
+
+    # Get or create organization and calling
+    calling_obj = Calling(row.calling)
+    calling_id = None
+    if calling_obj:
+        org_id = get_or_create_organization(cur, calling_obj.organization)
+        calling_id = get_or_create_calling(cur, calling_obj.name, org_id, calling_obj.rank)
+    else:
+        logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
+
+    # Get or create talk
+    emeritus = 1 if calling_obj and calling_obj.emeritus else 0
+    talk_id, is_new_talk = get_or_create_talk(cur, row.title, conference_id, emeritus)
+
+    # Only insert relationships and content if this is a new talk
+    if is_new_talk:
+        # Get or create speaker
+        speaker_name = get_speaker(row.speaker)
+        if speaker_name:
+            speaker_id = get_or_create_speaker(cur, speaker_name)
+            cur.execute("INSERT OR IGNORE INTO talk_speakers (talk, speaker) VALUES (?, ?)", (talk_id, speaker_id))
+        else:
+            logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
+
+        if calling_id:
+            cur.execute("INSERT OR IGNORE INTO talk_callings (talk, calling) VALUES (?, ?)", (talk_id, calling_id))
+
+        # Insert talk text
+        cur.execute("INSERT INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
+
+        # Insert talk URL
+        cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
+
+        # Extract and insert topics if client is provided
+        if topic_client and pd.notna(row.talk) and row.talk.strip():
+            try:
+                from . import topic_extractor
+
+                topics = topic_extractor.extract_topics_groq(row.talk.strip(), topic_client)
+                for topic in topics:
+                    if topic.strip():
+                        cur.execute(
+                            "INSERT OR IGNORE INTO talk_topics (talk, name) VALUES (?, ?)", (talk_id, topic.strip())
+                        )
+                logger.debug(f"Extracted {len(topics)} topics for talk: {row.title}")
+            except Exception as e:
+                logger.error(f"Failed to extract topics for talk '{row.title}': {e}")
+                # Continue anyway - the talk is saved even if topic extraction fails
+
+    return is_new_talk
