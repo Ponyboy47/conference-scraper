@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 from groq import Groq
 
+from . import topic_extractor
 from .models import Calling, get_speaker
 
 logger = logging.getLogger(__name__)
@@ -410,6 +411,9 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
 
     Returns:
         bool: True if the talk was newly inserted, False if it already existed
+
+    Raises:
+        Exception: If topic extraction is required but fails, preventing talk insertion
     """
     logger = logging.getLogger(__name__)
 
@@ -425,43 +429,48 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
     else:
         logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
 
-    # Get or create talk
+    # Check if talk already exists BEFORE extracting topics (saves API calls)
     emeritus = 1 if calling_obj and calling_obj.emeritus else 0
-    talk_id, is_new_talk = get_or_create_talk(cur, row.title, conference_id, emeritus)
+    existing_talk = cur.execute(
+        "SELECT id FROM talks WHERE title = ? AND conference = ?", (row.title, conference_id)
+    ).fetchone()
 
-    # Only insert relationships and content if this is a new talk
-    if is_new_talk:
-        # Get or create speaker
-        speaker_name = get_speaker(row.speaker)
-        if speaker_name:
-            speaker_id = get_or_create_speaker(cur, speaker_name)
-            cur.execute("INSERT OR IGNORE INTO talk_speakers (talk, speaker) VALUES (?, ?)", (talk_id, speaker_id))
-        else:
-            logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
+    if existing_talk:
+        return False  # Talk already exists, no need to process
 
-        if calling_id:
-            cur.execute("INSERT OR IGNORE INTO talk_callings (talk, calling) VALUES (?, ?)", (talk_id, calling_id))
+    # Talk is new - extract topics FIRST before inserting anything
+    topics = []
+    if topic_client and pd.notna(row.talk) and row.talk.strip():
+        # Extract topics before inserting talk - if this fails, we don't insert the talk
+        topics = topic_extractor.extract_topics_groq(row.talk.strip(), topic_client)
+        logger.debug(f"Extracted {len(topics)} topics for talk: {row.title}")
 
-        # Insert talk text
-        cur.execute("INSERT INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
+    # Now insert the talk and all related data
+    cur.execute(
+        "INSERT INTO talks (title, emeritus, conference) VALUES (?, ?, ?)", (row.title, emeritus, conference_id)
+    )
+    talk_id = cur.lastrowid
 
-        # Insert talk URL
-        cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
+    # Get or create speaker
+    speaker_name = get_speaker(row.speaker)
+    if speaker_name:
+        speaker_id = get_or_create_speaker(cur, speaker_name)
+        cur.execute("INSERT OR IGNORE INTO talk_speakers (talk, speaker) VALUES (?, ?)", (talk_id, speaker_id))
+    else:
+        logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
 
-        # Extract and insert topics if client is provided
-        if topic_client and pd.notna(row.talk) and row.talk.strip():
-            try:
-                from . import topic_extractor
+    if calling_id:
+        cur.execute("INSERT OR IGNORE INTO talk_callings (talk, calling) VALUES (?, ?)", (talk_id, calling_id))
 
-                topics = topic_extractor.extract_topics_groq(row.talk.strip(), topic_client)
-                for topic in topics:
-                    if topic.strip():
-                        cur.execute(
-                            "INSERT OR IGNORE INTO talk_topics (talk, name) VALUES (?, ?)", (talk_id, topic.strip())
-                        )
-                logger.debug(f"Extracted {len(topics)} topics for talk: {row.title}")
-            except Exception as e:
-                logger.error(f"Failed to extract topics for talk '{row.title}': {e}")
-                # Continue anyway - the talk is saved even if topic extraction fails
+    # Insert talk text
+    cur.execute("INSERT INTO talk_texts (talk, text) VALUES (?, ?)", (talk_id, row.talk))
 
-    return is_new_talk
+    # Insert talk URL
+    cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
+
+    # Insert topics (already extracted above)
+    for topic in topics:
+        if topic.strip():
+            cur.execute("INSERT OR IGNORE INTO talk_topics (talk, name) VALUES (?, ?)", (talk_id, topic.strip()))
+
+    return True  # Talk was newly inserted
