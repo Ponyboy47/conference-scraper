@@ -5,26 +5,12 @@ import time
 from typing import List
 
 import groq
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-# Rate limiting: 30 requests per minute = 2 seconds between requests
+# Rate limiting: Usually 30 requests per minute = 2 seconds between requests
 RATE_LIMIT_SECONDS = 2.1  # Slightly over 2 to be safe
-_last_request_time = 0
-
-
-def _rate_limit():
-    """Enforce rate limiting between API calls."""
-    global _last_request_time
-    current_time = time.time()
-    time_since_last = current_time - _last_request_time
-
-    if time_since_last < RATE_LIMIT_SECONDS:
-        sleep_time = RATE_LIMIT_SECONDS - time_since_last
-        logger.debug(f"Rate limiting: sleeping for {sleep_time:.2f} seconds")
-        time.sleep(sleep_time)
-
-    _last_request_time = time.time()
 
 
 def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
@@ -32,16 +18,13 @@ def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
 
     Args:
         text: The speech text to analyze
-        api_key: Groq API key (if None, will try GROQ_API_KEY env var)
+        client: Groq API client instance
 
     Returns:
         List of topic strings (empty list if extraction fails)
     """
     if not text or not text.strip():
         return []
-
-    # Enforce rate limiting
-    _rate_limit()
 
     # Highly optimized prompt for minimal tokens while maximizing clarity
     # Truncate text to first 4000 chars to save tokens (most talks have key themes early)
@@ -76,13 +59,11 @@ Topics:"""
             if topic and len(topic) > 2:  # Filter out very short fragments
                 topics.append(topic)
 
-        # Limit to 3-10 topics as requested
-        topics = topics[:10] if len(topics) > 10 else topics
+        topic_count = len(topics)
+        if topic_count < 3 or topic_count > 10:
+            logger.warning(f"Extracted {topic_count} topics, expected 3-10")
 
-        if len(topics) < 3:
-            logger.warning(f"Only extracted {len(topics)} topics, expected 3-10")
-
-        logger.debug(f"Extracted {len(topics)} topics: {topics[:3]}...")
+        logger.debug(f"Extracted {topic_count} topics: {topics}")
         return topics
 
     except Exception as e:
@@ -95,7 +76,7 @@ def extract_topics_batch(texts: List[str], client: groq.Groq, batch_size: int = 
 
     Args:
         texts: List of text strings to analyze
-        api_key: Groq API key (if None, will try GROQ_API_KEY env var)
+        client: Groq API client instance
         batch_size: Number of texts to process before logging progress
 
     Returns:
@@ -106,12 +87,15 @@ def extract_topics_batch(texts: List[str], client: groq.Groq, batch_size: int = 
 
     logger.info(f"Starting topic extraction for {total_texts} texts")
 
-    for i, text in enumerate(texts):
-        if (i + 1) % batch_size == 0 or i == 0:
-            logger.info(f"Processing text {i + 1}/{total_texts}")
+    # Use tqdm for nice progress bar
+    with tqdm(total=total_texts, desc="Extracting topics", unit="talk") as pbar:
+        for i, text in enumerate(texts):
+            topics = extract_topics_groq(text, client)
+            results.append(topics)
+            pbar.update(1)
 
-        topics = extract_topics_groq(text, client)
-        results.append(topics)
+            # Try to avoid rate limiting
+            time.sleep(RATE_LIMIT_SECONDS)
 
     logger.info("Topic extraction completed")
     return results
