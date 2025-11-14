@@ -5,6 +5,18 @@ generate a JSON + SQLite database of conference talks.
 
 Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/ConferenceScraper.ipynb
 
+## Usage
+
+Simply:
+
+```sh
+uv run conference-scraper
+```
+
+Afterwards you'll have an up-to-date conference_talks.json, conference_talks.db, conference_talks_no_text.db.
+
+Or you can just get the ones already generated in the [data](/data) directory.
+
 ## SQLite Schema
 
 |table|description|
