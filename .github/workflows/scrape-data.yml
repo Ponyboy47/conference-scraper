@@ -1,5 +1,11 @@
 name: Scrape Data
-
+on:
+  push:
+    branches:
+      - 'main'
+  schedule:
+    # Every April and October, try refreshing the data for 1 week after conference will have definitely ended
+     - cron: "0 0 8-15 4,10 *"
 jobs:
   generate-artifacts:
     name: python
