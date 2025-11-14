@@ -149,9 +149,9 @@ def apply_migrations(cur: sqlite3.Cursor, target_version: int = CURRENT_SCHEMA_V
         logger.debug(f"Schema is already at version {current_version}")
 
 
-def setup_sql() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
+def setup_sql(outputs_dir: Path) -> tuple[sqlite3.Connection, sqlite3.Cursor]:
     """Initialize SQLite database with proper schema migration support."""
-    db_path = Path("conference_talks.db")
+    db_path = outputs_dir / "conference_talks.db"
 
     # Create database file if it doesn't exist
     db_exists = db_path.exists()

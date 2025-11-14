@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import unicodedata
+from pathlib import Path
 
 import pandas as pd
 import typer
@@ -18,7 +19,7 @@ from .scraper import scrape_conference_pages, scrape_talk_data_parallel, scrape_
 app = typer.Typer()
 
 
-def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None = None) -> None:
+def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_api_key: str | None = None) -> None:
     """Main scraping process orchestration.
 
     Args:
@@ -28,7 +29,7 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
     logger = logging.getLogger(__name__)
 
     # Doing this first to make the feedback loop for SQL schema changes faster
-    con, cur = setup_sql()
+    con, cur = setup_sql(outputs_dir)
 
     main_url = "https://www.churchofjesuschrist.org/study/general-conference?lang=eng"
     conference_urls = scrape_conference_pages(main_url)
@@ -60,10 +61,11 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
     logger.info("Scraping complete")
 
     # Save to JSON
+    json_file = outputs_dir / "conference_talks.json"
     conference_json = conference_df.to_dict(orient="records")
-    with open("conference_talks.json", "w") as f:
+    with open(json_file, "w") as f:
         json.dump(conference_json, f, indent=2, sort_keys=True)
-    logger.info("JSON data saved to 'conference_talks.json'.")
+    logger.info(f"JSON data saved to '{json_file}'.")
 
     # Set up topic extraction client if needed
     topic_client = None
@@ -95,6 +97,7 @@ def main_scrape_process(extract_topics: bool = False, groq_api_key: str | None =
 
 @app.command()
 def scrape(
+    outputs_dir: str = "data",
     verbose: bool = False,
     log_file: str | None = None,
     extract_topics: bool = typer.Option(
@@ -110,6 +113,9 @@ def scrape(
                 "Topic extraction requested but no API key provided. Set GROQ_API_KEY or use --groq-api-key"
             )
 
+    outputs_dir = Path(outputs_dir) if outputs_dir else Path("data")
+    if not outputs_dir.exists():
+        outputs_dir.mkdir(parents=True)
     setup_logging(verbose, log_file)
 
     logger = logging.getLogger(__name__)
@@ -117,7 +123,7 @@ def scrape(
 
     # Run the scraper
     start = time.time()
-    main_scrape_process(extract_topics=extract_topics, groq_api_key=api_key)
+    main_scrape_process(outputs_dir=outputs_dir, extract_topics=extract_topics, groq_api_key=api_key)
     end = time.time()
 
     logger.info(f"Total time taken: {end - start:.2f} seconds")
