@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import shutil
+import sqlite3
 import time
 import unicodedata
 from pathlib import Path
@@ -29,7 +31,7 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
     logger = logging.getLogger(__name__)
 
     # Doing this first to make the feedback loop for SQL schema changes faster
-    con, cur = setup_sql(outputs_dir)
+    con, cur, db_file = setup_sql(outputs_dir, extract_topics)
 
     main_url = "https://www.churchofjesuschrist.org/study/general-conference?lang=eng"
     conference_urls = scrape_conference_pages(main_url)
@@ -92,7 +94,18 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
     else:
         logger.info("Processed all talks (topic extraction disabled)")
 
+    cur.execute("VACUUM")
+    con.commit()
     logger.info("SQLite data saved to 'conference_talks.db'.")
+
+    # Duplicate db without the talk text to save space
+    no_text_db = db_file.parent / "conference_talks_no_text.db"
+    shutil.copy(str(db_file), str(no_text_db))
+    con = sqlite3.connect(no_text_db)
+    cur = con.cursor()
+    cur.execute("DROP TABLE talk_texts")
+    cur.execute("VACUUM")
+    con.commit()
 
 
 @app.command()
