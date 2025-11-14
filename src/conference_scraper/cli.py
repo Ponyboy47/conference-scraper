@@ -100,7 +100,7 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
 
     # Duplicate db without the talk text to save space
     no_text_db = db_file.parent / "conference_talks_no_text.db"
-    shutil.copy(str(db_file), str(no_text_db))
+    shutil.copy2(str(db_file), str(no_text_db))
     con = sqlite3.connect(no_text_db)
     cur = con.cursor()
     cur.execute("DROP TABLE talk_texts")
