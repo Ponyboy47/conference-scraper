@@ -8,6 +8,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 ## SQLite Schema
 
 |table|description|
+|-|-|
 |speakers|Full names of conference speakers|
 |organization|Church Organizations|
 |callings|Callings from conference speakers|
@@ -25,18 +26,21 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Speakers
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |name|text|The full name of a conference speaker|
 
 #### Organizations
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |name|text|The name of the church organization|
 
 #### Callings
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |name|text|The full calling name|
 |organization|integer|The organization foreign key associated with the calling|
@@ -45,6 +49,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Conferences
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |year|integer|Which year was the conference held|
 |season|text|Was it the April or October conference|
@@ -52,6 +57,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Talks
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |title|text|The speaker's designated name for their conference remarks|
 |emeritus|integer|Whether or not the speaker was technically released at the time of giving the talk (0 if false, anything else == true)|
@@ -60,6 +66,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Talk Speakers
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this text corresponds|
 |speaker|integer|The speaker foreign key associated with the talk|
@@ -67,6 +74,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Talk Callings
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this text corresponds|
 |calling|integer|The calling foreign key associated with the speaker at the time of the talk|
@@ -74,6 +82,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Talk Texts
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this text corresponds|
 |text|text|The actual text of the message|
@@ -81,6 +90,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Talk URLs
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this url corresponds|
 |url|text|The actual URL assocated with the talk|
@@ -89,6 +99,7 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 #### Talk Topics
 
 |column|type|description|
+|-|-|-|
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this topic corresponds|
 |name|text|The name of the topic|
