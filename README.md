@@ -15,7 +15,7 @@ uv run conference-scraper
 
 Afterwards you'll have an up-to-date conference_talks.json, conference_talks.db, conference_talks_no_text.db.
 
-Or you can just get the ones already generated in the [data](/data) directory.
+Or you can just get the latest ones already generated in the [releases](https://github.com/Ponyboy47/conference-scraper/releases)
 
 ## SQLite Schema
 
