@@ -89,6 +89,7 @@ jobs:
           name: "Data Release ${{ steps.date.outputs.tag }}"
           files: |
             data/conference_talks.db
+            data/conference_talks_no_text.db
             data/conference_talks.json
           generate_release_notes: false
           overwrite: true  # Overwrite existing assets if release already exists
