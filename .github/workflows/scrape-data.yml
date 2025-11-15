@@ -1,4 +1,4 @@
-name: Scrape Data
+name: Scrape Conferences
 on:
   push:
     branches:
@@ -7,14 +7,18 @@ on:
     # Every April and October, try refreshing the data for 1 week after conference will have definitely ended
      - cron: "0 0 8-15 4,10 *"
 jobs:
-  generate-artifacts:
-    name: python
+  scrape-conferences:
+    name: Scrape Conferences
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create tags and releases
     env:
       UV_CACHE_DIR: /tmp/.uv-cache
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Fetch all history and tags to check for existing tags
 
       - name: "Set up Python"
         uses: actions/setup-python@v6
@@ -36,17 +40,57 @@ jobs:
       - name: Install the project
         run: uv sync --locked
 
-      - name: Scrape conferences
-        run: uv run conference-scraper
-
       - name: Minimize uv cache
         run: uv cache prune --ci
 
-      - name: Release
+      - name: Get current date
+        id: date
+        run: echo "tag=v$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+
+      - name: Fetch tags
+        run: git fetch --tags
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "${{ steps.date.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag ${{ steps.date.outputs.tag }} already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag ${{ steps.date.outputs.tag }} does not exist"
+          fi
+
+      - name: Scrape conferences
+        run: uv run conference-scraper
+
+      - name: Create data directory if it doesn't exist
+        run: mkdir -p data
+
+      - name: Move files to data directory
+        run: |
+          if [ -f conference_talks.db ]; then mv conference_talks.db data/; fi
+          if [ -f conference_talks.json ]; then mv conference_talks.json data/; fi
+
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.date.outputs.tag }}" -m "Release data for ${{ steps.date.outputs.tag }}"
+          git push origin "${{ steps.date.outputs.tag }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "${{ steps.date.outputs.date }}"
+          tag_name: ${{ steps.date.outputs.tag }}
+          name: "Data Release ${{ steps.date.outputs.tag }}"
           files: |
             data/conference_talks.db
-            data/conference_talks_no_text.db
             data/conference_talks.json
+          generate_release_notes: false
+          overwrite: true  # Overwrite existing assets if release already exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
