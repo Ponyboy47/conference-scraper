@@ -1,16 +1,17 @@
 """Data models and classes for conference data."""
 
 import re
+import unicodedata
 
 calling_re = re.compile(
     r"(?P<emeritus>(recently\s)?((released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[\w,\s()\d-]+)$",
-    flags=re.I,
+    flags=re.I | re.U,
 )
-org_re = re.compile(r"[a-zA-Z\s]+(,\s|\sin\sthe\s)(?P<org>[\w\s-]+)$", flags=re.I)
+org_re = re.compile(r"[\w\s]+(,\s|\sin\sthe\s)(?P<org>[\w\s-]+)$", flags=re.I | re.U)
 
 speaker_re = re.compile(
-    r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][\w,.\s-]+)$",
-    flags=re.I,
+    r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][\w,.\s()-]+)$",
+    flags=re.I | re.U,
 )
 
 
@@ -107,7 +108,9 @@ def get_speaker(full_speaker: str | None) -> str | None:
         return None
 
     speaker = full_speaker.strip()
-    match = speaker_re.search(speaker)
+    match = speaker_re.search(unicodedata.normalize("NFC", speaker))
     if match:
         speaker = match.group("speaker").strip()
-    return speaker
+    else:
+        print(f"Failed speaker match: {speaker}")
+    return unicodedata.normalize("NFD", speaker)
