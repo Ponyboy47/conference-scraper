@@ -8,6 +8,7 @@ calling_re = re.compile(
     flags=re.I | re.U,
 )
 org_re = re.compile(r"[\w\s]+(,\s|\sin\sthe\s)(?P<org>[\w\s-]+)$", flags=re.I | re.U)
+quorum_re = re.compile(r"^(?P<prefix>.*)(Council|Quorum) of the (?P<size>Twelve|Seventy)", flags=re.I | re.U)
 
 speaker_re = re.compile(
     r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][\w,.\s()-]+)$",
@@ -31,12 +32,32 @@ class Calling:
         if not matches:
             raise ValueError(f"Unsupported calling: {full_calling}")
 
-        self.name = matches.group("calling").strip().title()
-        self.organization, self.rank, self.org_rank = Calling.get_org_and_rank(self.name)
+        name = matches.group("calling").strip().title()
+        self.name = Calling.sanitized_name(name)
+        self.organization, self.rank, self.org_rank = Calling.get_org_and_rank(name)
         self.emeritus = len(matches.group("emeritus").strip()) > 0
 
     def __bool__(self) -> bool:
         return self.rank < 1000
+
+    @staticmethod
+    def sanitized_name(calling: str) -> str:
+        lowered = calling.lower()
+        if "president of the church" in lowered:
+            return "President of the Church of Jesus Christ of Latter-day Saints"
+
+        quorum_match = quorum_re.search(lowered)
+        if quorum_match:
+            size = quorum_match.group("size")
+            calling = f"{quorum_match.group('prefix')}Quorum of the {size}"
+            if size.lower() == "twelve":
+                calling += " Apostles"
+        elif "of the seventy" in lowered:
+            calling = calling.replace("Seventy", "Quorum of the Seventy")
+        elif lowered == "seventy":
+            return "Of The Quorum Of The Seventy"
+
+        return calling.title()
 
     @staticmethod
     def get_org_and_rank(calling: str) -> tuple[str, int, int]:
