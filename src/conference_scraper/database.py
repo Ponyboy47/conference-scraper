@@ -125,6 +125,30 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             )
         """)
 
+    cur.execute("""
+        CREATE VIEW talk_details AS
+        SELECT
+            t.id,
+            t.title,
+            t.emeritus,
+            c.year,
+            c.season,
+            GROUP_CONCAT(DISTINCT s.name) as speakers,
+            GROUP_CONCAT(DISTINCT u.url) as urls,
+            GROUP_CONCAT(DISTINCT cl.name) as calling,
+            GROUP_CONCAT(DISTINCT o.name) as organization
+        FROM talks t
+        LEFT JOIN conferences c ON t.conference = c.id
+        LEFT JOIN talk_speakers ts ON t.id = ts.talk
+        LEFT JOIN speakers s ON ts.speaker = s.id
+        LEFT JOIN talk_urls u ON t.id = u.talk
+        LEFT JOIN talk_callings tcl ON t.id = tcl.talk
+        LEFT JOIN callings cl ON tcl.calling = cl.id
+        LEFT JOIN organizations o ON cl.organization = o.id
+        GROUP BY t.id
+        ORDER BY c.year DESC, c.season DESC;
+    """)
+
 
 def apply_migrations(
     cur: sqlite3.Cursor, target_version: int = CURRENT_SCHEMA_VERSION, extract_topics: bool = False
