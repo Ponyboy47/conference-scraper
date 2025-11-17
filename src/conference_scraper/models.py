@@ -3,13 +3,13 @@
 import re
 
 calling_re = re.compile(
-    r"(?P<emeritus>(recently\s)?((released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[a-zA-Z,\s()0-9-]+)$",
+    r"(?P<emeritus>(recently\s)?((released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[\w,\s()\d-]+)$",
     flags=re.I,
 )
-org_re = re.compile(r"[a-zA-Z\s]+(,\s|\sin\sthe\s)(?P<org>[a-zA-Z\s-]+)$", flags=re.I)
+org_re = re.compile(r"[a-zA-Z\s]+(,\s|\sin\sthe\s)(?P<org>[\w\s-]+)$", flags=re.I)
 
 speaker_re = re.compile(
-    r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][a-zA-Z,.\s-]+)$",
+    r"((Presented\s)?by\s)(?P<office>(President|Elder|Brother|Sister|Bishop))?\s?(?P<speaker>[^\s][\w,.\s-]+)$",
     flags=re.I,
 )
 
