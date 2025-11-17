@@ -94,6 +94,7 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
     else:
         logger.info("Processed all talks (topic extraction disabled)")
 
+    con.commit()
     cur.execute("VACUUM")
     con.commit()
     logger.info("SQLite data saved to 'conference_talks.db'.")

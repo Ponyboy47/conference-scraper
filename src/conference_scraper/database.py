@@ -47,7 +47,8 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS organizations(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
+            name TEXT UNIQUE NOT NULL,
+            rank INTEGER NOT NULL
         )
     """)
     cur.execute("""
@@ -220,7 +221,7 @@ def get_or_create_speaker(cur: sqlite3.Cursor, name: str) -> int:
 
 
 @functools.cache
-def get_or_create_organization(cur: sqlite3.Cursor, name: str) -> int:
+def get_or_create_organization(cur: sqlite3.Cursor, name: str, rank: int) -> int:
     """Get or create an organization and return their ID. Cached to avoid duplicate operations."""
     # First try to find existing organization
     cur.execute("SELECT id FROM organizations WHERE name = ?", (name,))
@@ -229,7 +230,7 @@ def get_or_create_organization(cur: sqlite3.Cursor, name: str) -> int:
         return result[0]
 
     # If not found, insert new organization
-    cur.execute("INSERT INTO organizations (name) VALUES (?)", (name,))
+    cur.execute("INSERT INTO organizations (name, rank) VALUES (?, ?)", (name, rank))
     return cur.lastrowid
 
 
@@ -302,7 +303,7 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
     calling_obj = Calling(row.calling)
     calling_id = None
     if calling_obj:
-        org_id = get_or_create_organization(cur, calling_obj.organization)
+        org_id = get_or_create_organization(cur, calling_obj.organization, calling_obj.org_rank)
         calling_id = get_or_create_calling(cur, calling_obj.name, org_id, calling_obj.rank)
     else:
         logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
