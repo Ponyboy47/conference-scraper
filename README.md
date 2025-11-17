@@ -7,13 +7,13 @@ Forked from: https://github.com/lukejoneslj/GeneralConferenceScraper/blob/main/C
 
 ## Usage
 
-Simply:
+Make sure you have [`uv` installed](https://docs.astral.sh/uv/getting-started/installation/). Then simply:
 
 ```sh
 uv run conference-scraper
 ```
 
-Afterwards you'll have an up-to-date conference_talks.json, conference_talks.db, conference_talks_no_text.db.
+Afterwards check the newly created `data` directory for an up-to-date conference_talks.json, conference_talks.db, conference_talks_no_text.db.
 
 Or you can just get the latest ones already generated in the [releases](https://github.com/Ponyboy47/conference-scraper/releases)
 
