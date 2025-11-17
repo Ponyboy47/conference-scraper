@@ -30,7 +30,7 @@ class Calling:
         if not matches:
             raise ValueError(f"Unsupported calling: {full_calling}")
 
-        self.name = matches.group("calling").strip()
+        self.name = matches.group("calling").strip().title()
         self.organization, self.rank = Calling.get_org_and_rank(self.name)
         self.emeritus = len(matches.group("emeritus").strip()) > 0
 
