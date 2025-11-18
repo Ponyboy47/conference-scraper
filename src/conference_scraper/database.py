@@ -79,11 +79,13 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             FOREIGN KEY(conference) REFERENCES conferences
         )
     """)
+    # Add unique constraints to junction tables to prevent duplicates
     cur.execute("""
         CREATE TABLE IF NOT EXISTS talk_speakers(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             talk INTEGER NOT NULL,
             speaker INTEGER NOT NULL,
+            UNIQUE(talk, speaker) ON CONFLICT IGNORE,
             FOREIGN KEY(talk) REFERENCES talks
             FOREIGN KEY(speaker) REFERENCES speakers
         )
@@ -93,6 +95,7 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             talk INTEGER NOT NULL,
             calling INTEGER NOT NULL,
+            UNIQUE(talk, calling) ON CONFLICT IGNORE,
             FOREIGN KEY(talk) REFERENCES talks
             FOREIGN KEY(calling) REFERENCES callings
         )
@@ -134,10 +137,10 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             t.emeritus,
             c.year,
             c.season,
-            GROUP_CONCAT(DISTINCT s.name) as speaker,
-            GROUP_CONCAT(DISTINCT u.url) as url,
-            GROUP_CONCAT(DISTINCT cl.name) as calling,
-            GROUP_CONCAT(DISTINCT o.name) as organization
+            GROUP_CONCAT(s.name) as speaker,  -- DISTINCT not needed with unique constraint
+            GROUP_CONCAT(u.url) as urls,      -- DISTINCT not needed with unique constraint
+            GROUP_CONCAT(cl.name) as calling, -- DISTINCT not needed with unique constraint
+            GROUP_CONCAT(o.name) as organization  -- DISTINCT not needed with unique constraint
         FROM talks t
         LEFT JOIN conferences c ON t.conference = c.id
         LEFT JOIN talk_speakers ts ON t.id = ts.talk
@@ -316,14 +319,47 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
     # Get or create conference
     conference_id = get_or_create_conference(cur, row.year, row.season)
 
+    # Get speaker information early (needed for calling lookup)
+    speaker_name = get_speaker(row.speaker)
+    speaker_id = None
+    if speaker_name:
+        speaker_id = get_or_create_speaker(cur, speaker_name)
+
     # Get or create organization and calling
     calling_obj = Calling(row.calling)
     calling_id = None
+
     if calling_obj:
         org_id = get_or_create_organization(cur, calling_obj.organization, calling_obj.org_rank)
         calling_id = get_or_create_calling(cur, calling_obj.name, org_id, calling_obj.rank)
+    elif speaker_id:
+        # Look up the most recent calling for this speaker from the database
+        most_recent_calling = cur.execute(
+            """
+            SELECT cl.id, cl.name, cl.organization, cl.rank, o.name as org_name, o.rank as org_rank
+            FROM talk_speakers ts
+            JOIN talk_callings tcl ON ts.talk = tcl.talk
+            JOIN callings cl ON tcl.calling = cl.id
+            JOIN organizations o ON cl.organization = o.id
+            JOIN talks t ON ts.talk = t.id
+            JOIN conferences c ON t.conference = c.id
+            WHERE ts.speaker = ?
+            ORDER BY c.year DESC, c.season DESC, t.id DESC
+            LIMIT 1
+        """,
+            (speaker_id,),
+        ).fetchone()
+
+        if most_recent_calling:
+            calling_id = most_recent_calling[0]
+            logger.debug(
+                f"Using most recent calling for {speaker_name}: {most_recent_calling[1]} ({most_recent_calling[4]})"
+            )
+        else:
+            debug_info = f"{row.title} ({row.year} {row.season}) - {speaker_name}"
+            logger.warning(f"Talk has no calling and no previous calling found for speaker: {debug_info}")
     else:
-        logger.warning(f"Talk has no calling: {row.title} ({row.year} {row.season})")
+        logger.warning(f"Talk has no calling and no speaker: {row.title} ({row.year} {row.season})")
 
     # Check if talk already exists BEFORE extracting topics (saves API calls)
     emeritus = 1 if calling_obj and calling_obj.emeritus else 0
@@ -347,10 +383,8 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
     )
     talk_id = cur.lastrowid
 
-    # Get or create speaker
-    speaker_name = get_speaker(row.speaker)
-    if speaker_name:
-        speaker_id = get_or_create_speaker(cur, speaker_name)
+    # Associate speaker with talk (already have speaker_id from above)
+    if speaker_id:
         cur.execute("INSERT OR IGNORE INTO talk_speakers (talk, speaker) VALUES (?, ?)", (talk_id, speaker_id))
     else:
         logger.warning(f"Talk has no speaker: {row.title} ({row.year} {row.season})")
