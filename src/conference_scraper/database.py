@@ -134,8 +134,8 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             t.emeritus,
             c.year,
             c.season,
-            GROUP_CONCAT(DISTINCT s.name) as speakers,
-            GROUP_CONCAT(DISTINCT u.url) as urls,
+            GROUP_CONCAT(DISTINCT s.name) as speaker,
+            GROUP_CONCAT(DISTINCT u.url) as url,
             GROUP_CONCAT(DISTINCT cl.name) as calling,
             GROUP_CONCAT(DISTINCT o.name) as organization
         FROM talks t
@@ -148,6 +148,23 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
         LEFT JOIN organizations o ON cl.organization = o.id
         GROUP BY t.id
         ORDER BY c.year DESC, c.season DESC;
+    """)
+
+    cur.execute("""
+        CREATE VIEW speaker_highest_calling AS
+        SELECT
+            s.id as speaker_id,
+            s.name as speaker_name,
+            MIN(cl.rank) as highest_rank,
+            GROUP_CONCAT(DISTINCT cl.name) as calling_name,
+            GROUP_CONCAT(DISTINCT o.name) as organization_name
+        FROM speakers s
+        INNER JOIN talk_speakers ts ON s.id = ts.speaker
+        INNER JOIN talk_callings tcl ON ts.talk = tcl.talk
+        INNER JOIN callings cl ON tcl.calling = cl.id
+        INNER JOIN organizations o ON cl.organization = o.id
+        GROUP BY s.id, s.name
+        ORDER BY highest_rank ASC, s.name ASC;
     """)
 
 
