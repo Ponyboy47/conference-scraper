@@ -1,5 +1,6 @@
 """Data models and classes for conference data."""
 
+import logging
 import re
 import unicodedata
 
@@ -89,7 +90,7 @@ class Calling:
             if "young men" in lowered:
                 rank = 6
                 org_rank = 5
-            elif "sunday school in lowered":
+            elif "sunday school" in lowered:
                 rank = 7
                 org_rank = 6
             elif "relief society" in lowered:
@@ -109,7 +110,7 @@ class Calling:
                 org = "Young Men General Presidency"
                 rank = 6
                 org_rank = 5
-            elif "sunday school in lowered":
+            elif "sunday school" in lowered:
                 org = "Sunday School General Presidency"
                 rank = 7
                 org_rank = 6
@@ -142,6 +143,7 @@ class Calling:
 
 def get_speaker(full_speaker: str | None) -> str | None:
     """Extract clean speaker name from full speaker string."""
+    logger = logging.getLogger(__name__)
     if not full_speaker:
         return None
 
@@ -150,5 +152,5 @@ def get_speaker(full_speaker: str | None) -> str | None:
     if match:
         speaker = match.group("speaker").strip()
     else:
-        print(f"Failed speaker match: {speaker}")
+        logger.warning(f"Failed speaker match: {speaker}")
     return unicodedata.normalize("NFD", speaker)

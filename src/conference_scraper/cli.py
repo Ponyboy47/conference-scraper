@@ -96,7 +96,6 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
 
     con.commit()
     cur.execute("VACUUM")
-    con.commit()
     logger.info("SQLite data saved to 'conference_talks.db'.")
 
     # Duplicate db without the talk text to save space
@@ -127,7 +126,7 @@ def scrape(
                 "Topic extraction requested but no API key provided. Set GROQ_API_KEY or use --groq-api-key"
             )
 
-    outputs_dir = Path(outputs_dir) if outputs_dir else Path("data")
+    outputs_dir = Path(outputs_dir)
     if not outputs_dir.exists():
         outputs_dir.mkdir(parents=True)
     setup_logging(verbose, log_file)

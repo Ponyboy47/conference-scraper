@@ -5,12 +5,16 @@ import time
 from typing import List
 
 import groq
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 # Rate limiting: Usually 30 requests per minute = 2 seconds between requests
 RATE_LIMIT_SECONDS = 3  # Slightly over 2 to be safe
+
+
+def _rate_limit():
+    """Rate limiting function."""
+    time.sleep(RATE_LIMIT_SECONDS)
 
 
 def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
@@ -28,6 +32,9 @@ def extract_topics_groq(text: str, client: groq.Groq) -> List[str]:
     """
     if not text.strip():
         return []
+
+    # Enforce rate limiting
+    _rate_limit()
 
     # Highly optimized prompt for minimal tokens while maximizing clarity
     # Truncate text to first 4000 chars to save tokens (most talks have key themes early)
@@ -68,32 +75,3 @@ Return only comma-separated topics, no explanations or other text:
 
     logger.debug(f"Extracted {topic_count} topics: {topics}")
     return topics
-
-
-def extract_topics(texts: List[str], client: groq.Groq) -> List[List[str]]:
-    """Extract topics for multiple texts with rate limiting.
-
-    Args:
-        texts: List of text strings to analyze
-        client: Groq API client instance
-
-    Returns:
-        List of topic lists, one per input text
-    """
-    results = []
-    total_texts = len(texts)
-
-    logger.info(f"Starting topic extraction for {total_texts} texts")
-
-    # Use tqdm for nice progress bar
-    with tqdm(total=total_texts, desc="Extracting topics", unit="talks") as pbar:
-        for i, text in enumerate(texts):
-            topics = extract_topics_groq(text, client)
-            results.append(topics)
-            pbar.update(1)
-
-            # Try to avoid rate limiting
-            time.sleep(RATE_LIMIT_SECONDS)
-
-    logger.info("Topic extraction completed")
-    return results

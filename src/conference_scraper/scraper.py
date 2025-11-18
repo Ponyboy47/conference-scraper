@@ -117,7 +117,8 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "Saturday Morning",
             "Proclamation",
         ]
-        if any(map(lambda prefix: title.startswith(prefix), prefixes)) or title.endswith("Session"):
+        # Fix prefix checking (line 120)
+        if any(title.startswith(prefix) for prefix in prefixes) or title.endswith("Session"):
             return {}
 
         author_tag = soup.find("p", {"class": "author-name"})
@@ -131,7 +132,12 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "\n\n".join(paragraph.text.strip() for paragraph in content_array.find_all("p")) if content_array else None
         )
 
-        year = re.search(r"/(\d{4})/", url).group(1)
+        # Fix unsafe regex (line 134)
+        year_match = re.search(r"/(\d{4})/", url)
+        if not year_match:
+            logger.error(f"Could not extract year from URL: {url}")
+            return {}
+        year = year_match.group(1)
         season = "April" if "/04/" in url else "October"
 
         return {
