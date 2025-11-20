@@ -19,7 +19,7 @@ Or you can just get the latest ones already generated in the [releases](https://
 
 ## SQLite Schema
 
-|table|description|
+|table/view|description|
 |-|-|
 |speakers|Full names of conference speakers|
 |organization|Church Organizations|
@@ -32,6 +32,7 @@ Or you can just get the latest ones already generated in the [releases](https://
 |talk_texts|The textual content of a conference talk|
 |talk_urls|URLs linking a talk to an audio, visual, or textual representation|
 |talk_topics|Topics included in the message of a given talk|
+|talk_details|Aggregated data for a talk included in a single easy-to-consume view|
 
 ### Tables
 
@@ -108,13 +109,31 @@ Or you can just get the latest ones already generated in the [releases](https://
 |url|text|The actual URL assocated with the talk|
 |kind|text|The type of data expected at the URL (audio, video, or text)|
 
-#### Talk Topics
+#### Talk Topics (optional)
+
+> This one is not included in the files generated automatically for the releases.
 
 |column|type|description|
 |-|-|-|
 |id|integer|Primary key|
 |talk|integer|The talk foreign key to which this topic corresponds|
 |name|text|The name of the topic|
+
+### Views
+
+#### Talk Details
+
+|column|type|description|
+|-|-|-|
+|id|integer|Primary key (the talk's ID)|
+|title|text|The title of the talk|
+|emeritus|integer|Whether or not the speaker was technically released at the time of giving the talk (0 if false, anything else == true)|
+|year|integer|Which year was the conference held|
+|season|text|Was it the April or October conference|
+|speaker|text|The full name of the conference speaker|
+|urls|text|Comma-separated list of URLs associated with the talk|
+|calling|text|The full calling name of the speaker at the time of the talk|
+|organization|text|The name of the church organization for the calling at the time of the talk|
 
 ## Contributing
 
