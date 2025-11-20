@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 calling_re = re.compile(
-    r"(?P<emeritus>(recently\s)?((released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[\w,\s()\d-]+)$",
+    r"(?P<emeritus>(recently\s)?((emeritus|released|former)\s)?((as|member\sof\sthe)\s)?)(?P<calling>[\w,\s()\d-]+)$",
     flags=re.I | re.U,
 )
 org_re = re.compile(r"[\w\s]+(,\s|\sin\sthe\s)(?P<org>[\w\s-]+)$", flags=re.I | re.U)
