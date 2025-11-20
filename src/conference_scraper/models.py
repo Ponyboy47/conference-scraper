@@ -56,9 +56,9 @@ class Calling:
         elif "of the seventy" in lowered:
             calling = calling.replace("Seventy", "Quorum of the Seventy")
         elif lowered == "seventy":
-            return "Of The Quorum Of The Seventy"
+            return "Quorum Of The Seventy"
 
-        return calling.title()
+        return calling.title().removeprefix("Of The ")
 
     @staticmethod
     def get_org_and_rank(calling: str) -> tuple[str, int, int]:
