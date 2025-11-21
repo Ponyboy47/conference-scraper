@@ -117,8 +117,17 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "Saturday Morning",
             "Proclamation",
         ]
-        # Fix prefix checking (line 120)
-        if any(title.startswith(prefix) for prefix in prefixes) or title.endswith("Session"):
+        includes = [
+            "[Video Presentation]",
+        ]
+        suffixes = [
+            "Session",
+        ]
+        if (
+            any(title.startswith(prefix) for prefix in prefixes)
+            or any(include in title for include in includes)
+            or any(title.endswith(suffix) for suffix in suffixes)
+        ):
             return {}
 
         author_tag = soup.find("p", {"class": "author-name"})
