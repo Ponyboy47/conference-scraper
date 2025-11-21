@@ -64,9 +64,17 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS conferences(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            year NOT NULL,
+            year INTEGER NOT NULL,
             season TEXT NOT NULL,
             UNIQUE(year, season) ON CONFLICT IGNORE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sessions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL ON CONFLICT IGNORE,
+            day INTEGER CHECK(day IN (0, 7)),
+            time INTEGER CHECK(time IN (0, 1, 2)),
         )
     """)
     cur.execute("""
@@ -116,6 +124,16 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             kind TEXT NOT NULL CHECK(kind in ('audio', 'video', 'text')),
             UNIQUE(talk, url) ON CONFLICT IGNORE
             FOREIGN KEY(talk) REFERENCES talks
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS talk_sessions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            talk INTEGER NOT NULL,
+            session INTEGER NOT NULL,
+            UNIQUE(talk, session) ON CONFLICT IGNORE
+            FOREIGN KEY(talk) REFERENCES talks
+            FOREIGN KEY(session) REFERENCES sessions
         )
     """)
     if extract_topics:
