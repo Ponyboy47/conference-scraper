@@ -341,6 +341,13 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
     speaker_name = get_speaker(row.speaker)
     speaker_id = None
     if speaker_name:
+        # Only one instance of this and it was The Family Proclamation (technically read by Gordon B. Hinckley so make
+        # hime the speaker)
+        edge_name = (
+            "The First Presidency and Council of the Twelve Apostles of The Church of Jesus Christ of Latter-day Saints"
+        )
+        if speaker_name == edge_name:
+            speaker_name = "Gordon B. Hinckley"
         speaker_id = get_or_create_speaker(cur, speaker_name)
 
     # Get or create organization and calling
