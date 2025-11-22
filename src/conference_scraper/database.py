@@ -154,6 +154,8 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             t.emeritus,
             c.year,
             c.season,
+            sesh.name as session,
+            sesh.day,
             GROUP_CONCAT(s.name) as speaker,  -- DISTINCT not needed with unique constraint
             GROUP_CONCAT(u.url) as urls,      -- DISTINCT not needed with unique constraint
             GROUP_CONCAT(cl.name) as calling, -- DISTINCT not needed with unique constraint
@@ -162,6 +164,8 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
         LEFT JOIN conferences c ON t.conference = c.id
         LEFT JOIN talk_speakers ts ON t.id = ts.talk
         LEFT JOIN speakers s ON ts.speaker = s.id
+        LEFT JOIN talk_sessions tsesh ON t.id = tsesh.talk
+        LEFT JOIN sessions sesh ON tsesh.session = sesh.id
         LEFT JOIN talk_urls u ON t.id = u.talk
         LEFT JOIN talk_callings tcl ON t.id = tcl.talk
         LEFT JOIN callings cl ON tcl.calling = cl.id
