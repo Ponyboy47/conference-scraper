@@ -98,7 +98,7 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
                 con.commit()  # Commit after each new talk to ensure progress is saved
 
         except Exception as e:
-            logger.error(f"Failed to process talk '{row.title}' ({row.year} {row.season}): {e}")
+            logger.exception(f"Failed to process talk '{row.title}' ({row.year} {row.season}): {e}")
             continue
 
     if extract_topics:
