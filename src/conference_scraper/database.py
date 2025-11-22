@@ -73,8 +73,7 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
         CREATE TABLE IF NOT EXISTS sessions(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL ON CONFLICT IGNORE,
-            day INTEGER CHECK(day IN (0, 7)),
-            time INTEGER CHECK(time IN (0, 1, 2))
+            day INTEGER CHECK(day IN (0, 7))
         )
     """)
     cur.execute("""
@@ -301,6 +300,26 @@ def get_or_create_conference(cur: sqlite3.Cursor, year: int, season: str) -> int
 
 
 @functools.cache
+def get_or_create_session(cur: sqlite3.Cursor, name: str) -> int:
+    """Get or create a session and return their ID. Cached to avoid duplicate operations."""
+    # First try to find existing conference
+    cur.execute("SELECT id FROM sessions WHERE name = ?", (name,))
+    result = cur.fetchone()
+    if result:
+        return result[0]
+
+    day = None
+    if name.startswith("saturday"):
+        day = 7
+    elif name.startswith("sunday"):
+        day = 0
+
+    # If not found, insert new conference
+    cur.execute("INSERT INTO sessions (name, day) VALUES (?, ?)", (name, day))
+    return cur.lastrowid
+
+
+@functools.cache
 def get_or_create_talk(cur: sqlite3.Cursor, title: str, conference_id: int, emeritus: int) -> tuple[int, bool]:
     """Get or create a talk and return their ID and whether it was newly created. Cached to avoid duplicate operations.
 
@@ -336,6 +355,8 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
 
     # Get or create conference
     conference_id = get_or_create_conference(cur, row.year, row.season)
+
+    session_id = get_or_create_session(cur, row.session)
 
     # Get speaker information early (needed for calling lookup)
     speaker_name = get_speaker(row.speaker)
@@ -415,6 +436,9 @@ def insert_data_with_topics(cur: sqlite3.Cursor, row: pd.Series, topic_client: G
 
     # Insert talk URL
     cur.execute("INSERT INTO talk_urls (talk, url, kind) VALUES (?, ?, 'text')", (talk_id, row.url))
+
+    # Insert talk session
+    cur.execute("INSERT OR IGNORE INTO talk_sessions (talk, session) VALUES (?, ?)", (talk_id, session_id))
 
     # Insert topics (already extracted above)
     for topic in topics:
