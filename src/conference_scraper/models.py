@@ -149,8 +149,15 @@ def get_speaker(full_speaker: str | None) -> str | None:
 
     speaker = full_speaker.strip()
     match = speaker_re.search(unicodedata.normalize("NFC", speaker))
+    # Only one instance of this and it was The Family Proclamation (technically read by Gordon B. Hinckley so make
+    # hime the speaker)
+    edge_name = (
+        "The First Presidency and Council of the Twelve Apostles of The Church of Jesus Christ of Latter-day Saints"
+    )
     if match:
         speaker = match.group("speaker").strip()
+    elif speaker == edge_name:
+        speaker = "Gordon B. Hinckley"
     else:
         logger.warning(f"Failed speaker match: {speaker}")
     return unicodedata.normalize("NFD", speaker)
