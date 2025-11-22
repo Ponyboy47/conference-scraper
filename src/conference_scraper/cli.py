@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import time
@@ -36,14 +37,25 @@ def main_scrape_process(outputs_dir: Path, extract_topics: bool = False, groq_ap
     main_url = "https://www.churchofjesuschrist.org/study/general-conference?lang=eng"
     conference_urls = scrape_conference_pages(main_url)
 
-    all_talk_urls = []
+    total_sessions = 0
+    total_talks = 0
+    all_talk_urls: dict[str, dict[str, list[str]]] = {}
     for conference_url in tqdm(conference_urls, desc="Scraping conferences", unit="conferences"):
-        all_talk_urls.extend(scrape_talk_urls(conference_url))
+        match = re.search(r"/study/general-conference/(?P<year>\d{4})/(?P<season>(04|10)).+", conference_url)
+        if not match:
+            raise ValueError("What kind of garbage links are you getting??")
+        year = match.group("year")
+        season = match.group("season")
+        key = f"{year}-{season}"
+        urls = scrape_talk_urls(conference_url)
+        total_sessions += len(urls)
+        total_talks += sum(len(talks) for talks in urls.values())
+        all_talk_urls[key] = urls
 
-    logger.info(f"Total talks found: {len(all_talk_urls)}")
+    logger.info(f"Found {total_talks} total talks across {total_sessions} sessions of General Conference")
 
     # Scrape talks in parallel
-    conference_talks = scrape_talk_data_parallel(all_talk_urls)
+    conference_talks = scrape_talk_data_parallel(all_talk_urls, total_talks)
 
     # Create DataFrame from the scraped data
     conference_df = pd.DataFrame(conference_talks)

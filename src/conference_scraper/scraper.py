@@ -43,7 +43,7 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
     # Use CSS selector to pre-filter links containing the path (more efficient)
     links = [
         "https://www.churchofjesuschrist.org" + a["href"]
-        for a in soup.select('a[href*="/study/general-conference/"]')
+        for a in soup.select('a[href^="/study/general-conference/"]')
         if re.search(r"/study/general-conference/(\d{4}/(04|10)|\d{4}\d{4})", a["href"])
     ]
 
@@ -54,7 +54,7 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
             if decade_soup:
                 year_links = [
                     "https://www.churchofjesuschrist.org" + a["href"]
-                    for a in decade_soup.select('a[href*="/study/general-conference/"]')
+                    for a in decade_soup.select('a[href^="/study/general-conference/"]')
                     if re.search(r"/study/general-conference/\d{4}/(04|10)", a["href"])
                 ]
                 all_conference_links.extend(year_links)
@@ -66,32 +66,49 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
     return all_conference_links
 
 
-def scrape_talk_urls(conference_url: str) -> list[str]:
+def scrape_talk_urls(conference_url: str) -> dict[str, list[str]]:
     """Retrieve a list of URLs for each talk in a specific conference."""
     logger = logging.getLogger(__name__)
     soup = get_soup(conference_url)
     if soup is None:
         return []
 
-    # Use CSS selector to pre-filter links (more efficient than find_all)
-    talk_links = [
-        "https://www.churchofjesuschrist.org" + a["href"]
-        for a in soup.select('a[href*="/study/general-conference/"]')
-        if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
-    ]
+    session_talks = {}
+    session_talks_count = 0
+    # Select ONLY the <li> elements that:
+    # 1. Have the correct data-content-type
+    # 2. Contain an <a> whose href starts with /study/general-conference/
+    session_lists = soup.select(
+        'li[data-content-type="general-conference-session"]:has(a[href^="/study/general-conference/"])'
+    )
+    for session in session_lists:
+        # 3. Get the session title
+        # 4. Get the talk links for each session
+        session_talk_links = list(
+            set(
+                "https://www.churchofjesuschrist.org" + a["href"]
+                for a in session.select("a[href^='/study/general-conference/']")
+                if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
+                and not a["href"].endswith("session?lang=eng")
+            )
+        )
+        session_title = session.select_one("p.title").get_text(strip=True)
+        session_talks[session_title] = session_talk_links
+        talks_count = len(session_talk_links)
+        session_talks_count += talks_count
 
-    # Remove duplicate links and session links
-    talk_links = list(set(talk_links))
-    talk_links = [link for link in talk_links if not link.endswith("session?lang=eng")]
+        logger.debug(f"Found {talks_count} talk links in {session_title} of {conference_url}")
 
-    logger.debug(f"Found {len(talk_links)} talk links in {conference_url}")
-    if talk_links:
-        logger.debug(f"Sample talk links: {talk_links[:3]}")
-    return talk_links
+    logger.debug(f"Found {session_talks_count} talk links in {conference_url}")
+    if session_talks:
+        logger.debug(f"Sample talk links: {list(session_talks.values())[:3]}")
+    return session_talks
 
 
-def scrape_talk_data(url: str) -> dict[str, str | None]:
+def scrape_talk_data(session_url: tuple[str, str]) -> dict[str, str | None]:
     """Scrapes a single talk for data such as: title, conference, calling, speaker, content."""
+    session = session_url[0]
+    url = session_url[1]
     logger = logging.getLogger(__name__)
     try:
         soup = get_soup(url)
@@ -159,19 +176,29 @@ def scrape_talk_data(url: str) -> dict[str, str | None]:
             "season": season,
             "url": url,
             "talk": content,
+            "session": session,
         }
     except Exception as e:
         logger.error(f"Failed to scrape {url}: {e}")
         return {}
 
 
-def scrape_talk_data_parallel(urls: list[str]) -> list[dict[str, str | None]]:
+def flatten_talk_data(conferences: dict[str, dict[str, list[str]]]) -> list[tuple[str, str]]:
+    talks = []
+    for conference in conferences.values():
+        for session, urls in conference.items():
+            talks.extend((session, url) for url in urls)
+
+    return talks
+
+
+def scrape_talk_data_parallel(conferences: dict[str, dict[str, list[str]]], total: int) -> list[dict[str, str | None]]:
     """Scrapes all talks in parallel using ThreadPoolExecutor."""
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
         results = list(
             tqdm(
-                executor.map(scrape_talk_data, urls),
-                total=len(urls),
+                executor.map(scrape_talk_data, flatten_talk_data(conferences)),
+                total=total,
                 desc="Scraping talks in parallel",
                 unit="talks",
             )
