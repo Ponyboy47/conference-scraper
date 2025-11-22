@@ -74,31 +74,72 @@ def scrape_talk_urls(conference_url: str) -> dict[str, list[str]]:
         return []
 
     session_talks = {}
-    session_talks_count = 0
     # Select ONLY the <li> elements that:
     # 1. Have the correct data-content-type
     # 2. Contain an <a> whose href starts with /study/general-conference/
     session_lists = soup.select(
         'li[data-content-type="general-conference-session"]:has(a[href^="/study/general-conference/"])'
     )
-    for session in session_lists:
-        # 3. Get the session title
-        # 4. Get the talk links for each session
-        session_talk_links = list(
-            set(
-                "https://www.churchofjesuschrist.org" + a["href"]
-                for a in session.select("a[href^='/study/general-conference/']")
-                if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
-                and not a["href"].endswith("session?lang=eng")
+    if session_lists:
+        for session in session_lists:
+            # 3. Get the session title
+            session_title = session.select_one("p.title").get_text(strip=True)
+            # 4. Get the talk links for each session
+            session_talk_links = list(
+                set(
+                    "https://www.churchofjesuschrist.org" + a["href"]
+                    for a in session.select("a[href^='/study/general-conference/']")
+                    if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
+                    and not a["href"].endswith("session?lang=eng")
+                )
             )
+
+            talks_count = len(session_talk_links)
+            if talks_count > 0:
+                if session_title in session_talks:
+                    session_talks[session_title] = list(set(session_talks[session_title].extend(session_talk_links)))
+                    talks_count = len(session_talks[session_title])
+                else:
+                    session_talks[session_title] = session_talk_links
+
+                logger.debug(f"Found {talks_count} talk links in {session_title} of {conference_url}")
+    else:
+        # Not all sessions have the data-content-type attribute, but luckily we can fall back on this slower, but
+        # equally effective method
+        logger.debug(f"Using fallback talk discovery method for {conference_url}")
+        fallback_title_ps = soup.find_all(
+            "p", class_="title", string=lambda t: t and t.strip().lower().endswith("session")
         )
-        session_title = session.select_one("p.title").get_text(strip=True)
-        session_talks[session_title] = session_talk_links
-        talks_count = len(session_talk_links)
-        session_talks_count += talks_count
+        for session in fallback_title_ps:
+            # Go up to the nearest <li>
+            li = session.find_parent("li")
+            if not li:
+                logger.warning("Failed to find parent list item")
+                continue
 
-        logger.debug(f"Found {talks_count} talk links in {session_title} of {conference_url}")
+            # Find the talk links inside this <li>
 
+            session_title = session.get_text(strip=True)
+            session_talk_links = list(
+                set(
+                    "https://www.churchofjesuschrist.org" + a["href"]
+                    for a in li.select("a[href^='/study/general-conference/']")
+                    if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
+                    and not a["href"].endswith("session?lang=eng")
+                )
+            )
+
+            talks_count = len(session_talk_links)
+            if talks_count > 0:
+                if session_title in session_talks:
+                    session_talks[session_title] = list(set(session_talks[session_title].extend(session_talk_links)))
+                    talks_count = len(session_talks[session_title])
+                else:
+                    session_talks[session_title] = session_talk_links
+
+                logger.debug(f"Found {talks_count} talk links in {session_title} of {conference_url}")
+
+    session_talks_count = sum(len(talks) for talks in session_talks.values())
     logger.debug(f"Found {session_talks_count} talk links in {conference_url}")
     if session_talks:
         logger.debug(f"Sample talk links: {list(session_talks.values())[:3]}")
