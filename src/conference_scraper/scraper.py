@@ -40,9 +40,10 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
     all_conference_links = []
 
     # Find all the links to individual conferences or decades
+    # Use CSS selector to pre-filter links containing the path (more efficient)
     links = [
         "https://www.churchofjesuschrist.org" + a["href"]
-        for a in soup.find_all("a", href=True)
+        for a in soup.select('a[href*="/study/general-conference/"]')
         if re.search(r"/study/general-conference/(\d{4}/(04|10)|\d{4}\d{4})", a["href"])
     ]
 
@@ -53,7 +54,7 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
             if decade_soup:
                 year_links = [
                     "https://www.churchofjesuschrist.org" + a["href"]
-                    for a in decade_soup.find_all("a", href=True)
+                    for a in decade_soup.select('a[href*="/study/general-conference/"]')
                     if re.search(r"/study/general-conference/\d{4}/(04|10)", a["href"])
                 ]
                 all_conference_links.extend(year_links)
@@ -72,9 +73,10 @@ def scrape_talk_urls(conference_url: str) -> list[str]:
     if soup is None:
         return []
 
+    # Use CSS selector to pre-filter links (more efficient than find_all)
     talk_links = [
         "https://www.churchofjesuschrist.org" + a["href"]
-        for a in soup.find_all("a", href=True)
+        for a in soup.select('a[href*="/study/general-conference/"]')
         if re.search(r"/study/general-conference/\d{4}/(04|10)/.+", a["href"])
     ]
 
