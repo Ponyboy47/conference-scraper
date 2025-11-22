@@ -74,7 +74,7 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL ON CONFLICT IGNORE,
             day INTEGER CHECK(day IN (0, 7)),
-            time INTEGER CHECK(time IN (0, 1, 2)),
+            time INTEGER CHECK(time IN (0, 1, 2))
         )
     """)
     cur.execute("""
