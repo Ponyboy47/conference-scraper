@@ -73,7 +73,7 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
         CREATE TABLE IF NOT EXISTS sessions(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL ON CONFLICT IGNORE,
-            day INTEGER CHECK(day IN (0, 7))
+            day INTEGER CHECK(day IN (0, 6))
         )
     """)
     cur.execute("""
@@ -314,7 +314,7 @@ def get_or_create_session(cur: sqlite3.Cursor, name: str) -> int:
 
     day = None
     if name.startswith("saturday"):
-        day = 7
+        day = 6
     elif name.startswith("sunday"):
         day = 0
 
