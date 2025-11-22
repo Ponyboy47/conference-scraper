@@ -67,7 +67,7 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
 
 
 session_re = re.compile(
-    r"(?P<prefix>General ?)?(?P<session>[\w\d]+\s?)+?(?P<suffix> ?(Session|Meeting|Services))?", flags=re.I | re.U
+    r"(?P<prefix>General ?)?(?P<session>[\w\d]+\s?)+?(?P<suffix> ?(Session|Meeting))?", flags=re.I | re.U
 )
 
 
