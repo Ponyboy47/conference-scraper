@@ -73,7 +73,7 @@ def migrate_to_v1(cur: sqlite3.Cursor, extract_topics: bool = False) -> None:
         CREATE TABLE IF NOT EXISTS sessions(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL ON CONFLICT IGNORE,
-            day INTEGER CHECK(day IN (0, 6))
+            day INTEGER CHECK(day IN (0, 1, 2, 3, 4, 5, 6))
         )
     """)
     cur.execute("""
@@ -313,10 +313,21 @@ def get_or_create_session(cur: sqlite3.Cursor, name: str) -> int:
         return result[0]
 
     day = None
-    if name.startswith("saturday"):
-        day = 6
-    elif name.startswith("sunday"):
+    lower_name = name.lower()
+    if "sunday" in lower_name:
         day = 0
+    elif "monday" in lower_name:
+        day = 1
+    elif "tuesday" in lower_name:
+        day = 2
+    elif "wednesday" in lower_name:
+        day = 3
+    elif "thursday" in lower_name:
+        day = 4
+    elif "friday" in lower_name:
+        day = 5
+    elif "saturday" in lower_name:
+        day = 6
 
     # If not found, insert new conference
     cur.execute("INSERT INTO sessions (name, day) VALUES (?, ?)", (name, day))

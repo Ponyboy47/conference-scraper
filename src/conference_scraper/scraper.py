@@ -66,6 +66,20 @@ def scrape_conference_pages(main_page_url: str) -> list[str]:
     return all_conference_links
 
 
+session_re = re.compile(
+    r"(?P<prefix>General ?)?(?P<session>[\w\d]+\s?)+?(?P<suffix> ?(Session|Meeting|Services))?", flags=re.I | re.U
+)
+
+
+def normalize_session_name(name: str) -> str:
+    session_match = session_re.finditer(name)
+    session_name = ""
+    for match in session_match:
+        session = match.group("session")
+        session_name += session
+    return session_name.strip() if session_name else name.strip().title()
+
+
 def scrape_talk_urls(conference_url: str) -> dict[str, list[str]]:
     """Retrieve a list of URLs for each talk in a specific conference."""
     logger = logging.getLogger(__name__)
@@ -83,7 +97,7 @@ def scrape_talk_urls(conference_url: str) -> dict[str, list[str]]:
     if session_lists:
         for session in session_lists:
             # 3. Get the session title
-            session_title = session.select_one("p.title").get_text(strip=True)
+            session_title = normalize_session_name(session.select_one("p.title").get_text(strip=True))
             # 4. Get the talk links for each session
             session_talk_links = list(
                 set(
@@ -119,7 +133,7 @@ def scrape_talk_urls(conference_url: str) -> dict[str, list[str]]:
 
             # Find the talk links inside this <li>
 
-            session_title = session.get_text(strip=True)
+            session_title = normalize_session_name(session.get_text(strip=True))
             session_talk_links = list(
                 set(
                     "https://www.churchofjesuschrist.org" + a["href"]
