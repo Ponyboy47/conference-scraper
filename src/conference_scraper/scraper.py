@@ -186,6 +186,7 @@ def scrape_talk_data(session_url: tuple[str, str]) -> dict[str, str | None]:
             "Church Finance Committee Report",
             "The Sustaining of Church Officers",
             "The Church Audit Committee Report",
+            "Church Audit Committee Report",
             "Sustaining of ",
             "Video:",
             "Saturday Morning",

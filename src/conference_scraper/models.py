@@ -128,16 +128,6 @@ class Calling:
                 org_rank = 9
             else:
                 raise ValueError(f"Unsupported calling for organization: {calling}")
-        elif any(
-            map(
-                lambda field: field in lowered,
-                [
-                    "church audit committee",
-                    "church leadership committee",
-                ],
-            )
-        ):
-            org = calling.title()
         return org, rank, org_rank
 
 
