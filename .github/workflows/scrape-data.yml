@@ -16,20 +16,23 @@ jobs:
       UV_CACHE_DIR: /tmp/.uv-cache
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0  # Fetch all history and tags to check for existing tags
 
       - name: "Set up Python"
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.0.0
         with:
-          python-version-file: "pyproject.toml"
+          python-version-file: ".python-version"
+          check-latest: true
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: false  # Managed by actions/cache below
 
       - name: Restore uv cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: /tmp/.uv-cache
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
@@ -83,7 +86,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ steps.date.outputs.tag }}
           name: "Data Release ${{ steps.date.outputs.tag }}"
